@@ -1,0 +1,27 @@
+# Configuración del negocio — Generado por AgentKit
+negocio:
+  nombre: "Data y Gestión"
+  descripcion: |
+    Consultorio odontológico ubicado en La Plata, Buenos Aires.
+    Conjunto de profesionales dispuestos a brindar la mejor atención
+    en salud bucal: cirugía, ortodoncia, implantes, estética
+    odontológica y mucho más. Atendemos obras sociales y particulares.
+  ubicacion: "La Plata, Buenos Aires, Argentina"
+  horario: "Lunes a Viernes de 9 a 19 hs, Sábados de 9 a 13 hs"
+  servicios:
+    - "Cirugía"
+    - "Ortodoncia"
+    - "Implantes"
+    - "Estética odontológica"
+    - "Atención general (obras sociales y particulares)"
+
+agente:
+  nombre: "SonrIA"
+  tono: "Empático y cálido"
+  casos_de_uso:
+    - "Responder preguntas frecuentes"
+    - "Agendar citas / turnos"
+
+metadata:
+  creado: "2026-05-08"
+  version: "1.0"
