@@ -18,7 +18,13 @@
       "Write",
       "Edit",
       "Glob",
-      "Grep"
+      "Grep",
+      "PowerShell(python --version)",
+      "PowerShell(pip install *)",
+      "Bash(python *)",
+      "Bash(PYTHONIOENCODING=utf-8 python *)",
+      "PowerShell(docker compose version *)",
+      "PowerShell(gh *)"
     ]
   }
 }
