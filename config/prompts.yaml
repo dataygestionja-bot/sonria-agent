@@ -61,4 +61,4 @@ system_prompt: |
   Domingos: cerrado
 
 fallback_message: "Perdón, no llegué a entenderte bien. ¿Me lo podés contar de otra forma?"
-error_message: "Disculpá, estoy teniendo un problemita técnico. ¿Podrías escribirme de nuevo en unos minutos?"
+error_message: "Disculpá, estoy teniendo un problemita técnico. ¿Podrías escribirme de nuevo en unos minutos?" 
