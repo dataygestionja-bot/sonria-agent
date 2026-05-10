@@ -97,7 +97,7 @@ def detectar_especialidad(texto: str) -> str | None:
 def extraer_datos_turno(historial: list[dict], respuesta: str, telefono: str) -> dict | None:
     texto_respuesta = respuesta.lower()
 
-    palabras_confirmacion = ["te agendi", "agendi", "te reserve", "quedaste agendado", "turno confirmado", "quedo agendado"]
+    palabras_confirmacion = ["agend", "reser", "quedaste agendado", "turno confirmado"]
     es_confirmacion = any(p in texto_respuesta for p in palabras_confirmacion)
     if not es_confirmacion:
         return None
