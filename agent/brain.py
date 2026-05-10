@@ -268,7 +268,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                 datos = extraer_datos_confirmacion(historial, respuesta, telefono)
                 if datos:
                     if not datos.get("dni"):
-                        logger.warning("Confirmacion sin DNI — no se registra el turno")
+                        logger.warning(f"Confirmacion sin DNI — datos extraidos: {datos}")
                     else:
                         resultado = await registrar_turno_supabase(**datos)
                         if resultado.get("ok"):
