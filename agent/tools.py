@@ -1,13 +1,7 @@
 # agent/tools.py — Herramientas del agente
 # Conectado a Supabase del consultorio Data y Gestión
 
-"""
-Herramientas específicas del consultorio Data y Gestión.
-Casos de uso: FAQ + Agendar turnos con consulta a Supabase.
-"""
-
 import os
-import json
 import yaml
 import logging
 import httpx
@@ -16,7 +10,6 @@ from typing import Optional
 
 logger = logging.getLogger("agentkit")
 
-# ─── Configuración Supabase ───────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qqkxxquqdxyiqalhccmo.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxa3h4cXVxZHh5aXFhbGhjY21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzODI4OTIsImV4cCI6MjA5MTk1ODg5Mn0.R6Lkyf3SRchy1Tl7w05msRYAsvvGlf5ELJohUeUi_E8")
 
@@ -28,24 +21,12 @@ HEADERS = {
 }
 
 DIAS_SEMANA = {
-    0: "Lunes",
-    1: "Martes",
-    2: "Miércoles",
-    3: "Jueves",
-    4: "Viernes",
-    5: "Sábado",
-    6: "Domingo",
-}
-
-# día_semana en DB: 1=Lunes, 2=Martes... 7=Domingo (estilo ISO)
-DIA_NOMBRE_A_NUM = {
-    "lunes": 1, "martes": 2, "miércoles": 3, "miercoles": 3,
-    "jueves": 4, "viernes": 5, "sábado": 6, "sabado": 6, "domingo": 7,
+    0: "Lunes", 1: "Martes", 2: "Miercoles", 3: "Jueves",
+    4: "Viernes", 5: "Sabado", 6: "Domingo",
 }
 
 
 def cargar_info_negocio() -> dict:
-    """Carga la información del negocio desde business.yaml."""
     try:
         with open("config/business.yaml", "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
@@ -56,7 +37,6 @@ def cargar_info_negocio() -> dict:
 # ─── Supabase helpers ─────────────────────────────────────────────────────────
 
 async def supabase_get(tabla: str, params: dict = None) -> list:
-    """Hace un GET a Supabase REST API."""
     url = f"{SUPABASE_URL}/rest/v1/{tabla}"
     async with httpx.AsyncClient() as client:
         r = await client.get(url, headers=HEADERS, params=params or {})
@@ -67,7 +47,6 @@ async def supabase_get(tabla: str, params: dict = None) -> list:
 
 
 async def supabase_post(tabla: str, data: dict) -> dict:
-    """Hace un POST a Supabase REST API."""
     url = f"{SUPABASE_URL}/rest/v1/{tabla}"
     async with httpx.AsyncClient() as client:
         r = await client.post(url, headers=HEADERS, json=data)
@@ -78,61 +57,123 @@ async def supabase_post(tabla: str, data: dict) -> dict:
         return {}
 
 
-# ─── Herramientas de consulta ─────────────────────────────────────────────────
+# ─── Pacientes ────────────────────────────────────────────────────────────────
+
+async def buscar_paciente_por_dni(dni: str) -> dict | None:
+    """Busca un paciente por DNI. Retorna el paciente o None."""
+    resultados = await supabase_get("pacientes", {
+        "dni": f"eq.{dni.strip()}",
+        "activo": "eq.true",
+        "select": "id,nombre,apellido,dni,telefono,obra_social_id"
+    })
+    return resultados[0] if resultados else None
+
+
+async def crear_paciente(
+    nombre: str,
+    apellido: str,
+    dni: str,
+    telefono: str,
+    obra_social_id: Optional[str] = None,
+) -> dict:
+    """Crea un nuevo paciente en Supabase."""
+    paciente = {
+        "nombre": nombre.strip().capitalize(),
+        "apellido": apellido.strip().capitalize(),
+        "dni": dni.strip(),
+        "telefono": telefono,
+        "activo": True,
+        "pendiente_validacion": False,
+    }
+    if obra_social_id:
+        paciente["obra_social_id"] = obra_social_id
+
+    resultado = await supabase_post("pacientes", paciente)
+    if resultado.get("id"):
+        logger.info(f"Paciente creado: {resultado['id']}")
+    return resultado
+
+
+async def buscar_obra_social_id(nombre_obra: str) -> str | None:
+    """Busca el ID de una obra social por nombre."""
+    resultados = await supabase_get("obras_sociales", {
+        "nombre": f"ilike.*{nombre_obra}*",
+        "activo": "eq.true",
+        "select": "id,nombre"
+    })
+    return resultados[0]["id"] if resultados else None
+
+
+async def obtener_o_crear_paciente(
+    nombre: str,
+    apellido: str,
+    dni: str,
+    telefono: str,
+    obra_social: Optional[str] = None,
+) -> dict | None:
+    """
+    Busca el paciente por DNI. Si no existe, lo crea.
+    Retorna el paciente con su ID.
+    """
+    # Buscar primero
+    paciente = await buscar_paciente_por_dni(dni)
+    if paciente:
+        logger.info(f"Paciente encontrado: {paciente['id']}")
+        return paciente
+
+    # Buscar obra social ID si se proporcionó
+    obra_social_id = None
+    if obra_social and obra_social.lower() != "particular":
+        obra_social_id = await buscar_obra_social_id(obra_social)
+
+    # Crear paciente nuevo
+    nuevo = await crear_paciente(nombre, apellido, dni, telefono, obra_social_id)
+    return nuevo if nuevo.get("id") else None
+
+
+# ─── Disponibilidad ───────────────────────────────────────────────────────────
 
 async def obtener_especialidades() -> list[str]:
-    """Retorna las especialidades únicas de los profesionales activos."""
     profesionales = await supabase_get("profesionales", {"activo": "eq.true", "select": "especialidad"})
     especialidades = list({p["especialidad"].strip() for p in profesionales if p.get("especialidad")})
     return sorted(especialidades)
 
 
 async def obtener_profesionales_por_especialidad(especialidad: str) -> list[dict]:
-    """Retorna los profesionales activos de una especialidad dada."""
     todos = await supabase_get("profesionales", {
         "activo": "eq.true",
         "select": "id,nombre,apellido,especialidad"
     })
-    return [
-        p for p in todos
-        if especialidad.lower() in p.get("especialidad", "").lower()
-    ]
+    return [p for p in todos if especialidad.lower() in p.get("especialidad", "").lower()]
 
 
 async def obtener_horarios_profesional(profesional_id: str) -> list[dict]:
-    """Retorna los horarios activos de un profesional."""
     horarios = await supabase_get("horarios_profesional", {
         "profesional_id": f"eq.{profesional_id}",
         "activo": "eq.true",
         "select": "dia_semana,hora_inicio,hora_fin,duracion_slot_min"
     })
+    logger.info(f"Horarios {profesional_id}: {horarios} | dias_con_horario: {set(h['dia_semana'] for h in horarios)}")
     return horarios
 
 
-async def obtener_turnos_ocupados(profesional_id: str, fecha: str) -> list[str]:
-    """Retorna los horarios ya ocupados de un profesional en una fecha."""
+async def obtener_turnos_ocupados(profesional_id: str, fecha: str) -> list:
     turnos = await supabase_get("turnos", {
         "profesional_id": f"eq.{profesional_id}",
         "fecha": f"eq.{fecha}",
-        "estado": "not.in.(rechazado)",
+        "estado": "neq.rechazado",
         "select": "hora_inicio,hora_fin"
     })
     return [(t["hora_inicio"], t["hora_fin"]) for t in turnos]
 
 
 async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list[str]:
-    """
-    Calcula los slots disponibles para un profesional en una fecha dada.
-    fecha_str: "YYYY-MM-DD"
-    """
     try:
         fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
     except ValueError:
         return []
 
-    # día ISO: lunes=1, domingo=7
     dia_iso = fecha.isoweekday()
-
     horarios = await obtener_horarios_profesional(profesional_id)
     horario_dia = next((h for h in horarios if h["dia_semana"] == dia_iso), None)
 
@@ -140,9 +181,8 @@ async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list
         return []
 
     ocupados = await obtener_turnos_ocupados(profesional_id, fecha_str)
-    ocupados_inicio = {t[0][:5] for t in ocupados}  # "HH:MM"
+    ocupados_inicio = {t[0][:5] for t in ocupados}
 
-    # Generar slots
     inicio = datetime.strptime(horario_dia["hora_inicio"][:5], "%H:%M")
     fin = datetime.strptime(horario_dia["hora_fin"][:5], "%H:%M")
     duracion = timedelta(minutes=horario_dia["duracion_slot_min"])
@@ -159,13 +199,8 @@ async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list
 
 
 async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar: int = 14) -> list[dict]:
-    """
-    Busca los próximos días con slots disponibles para un profesional.
-    Retorna lista de {fecha, dia_nombre, slots}
-    """
     horarios = await obtener_horarios_profesional(profesional_id)
     dias_con_horario = {h["dia_semana"] for h in horarios}
-    logger.info(f"Horarios Rojas: {horarios} | dias_con_horario: {dias_con_horario}")
 
     resultados = []
     hoy = date.today()
@@ -184,17 +219,16 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
             resultados.append({
                 "fecha": fecha_str,
                 "dia_nombre": DIAS_SEMANA[fecha.weekday()],
-                "slots": slots[:6]  # máx 6 slots para no saturar el mensaje
+                "slots": slots[:6]
             })
 
-        if len(resultados) >= 3:  # mostrar máx 3 fechas
+        if len(resultados) >= 3:
             break
 
     return resultados
 
 
 async def obtener_obras_sociales() -> list[str]:
-    """Retorna las obras sociales activas."""
     os_list = await supabase_get("obras_sociales", {"activo": "eq.true", "select": "nombre"})
     return [o["nombre"] for o in os_list]
 
@@ -210,23 +244,31 @@ async def registrar_turno_supabase(
     apellido: str,
     telefono: str,
     motivo: str,
+    dni: str = "",
     obra_social: Optional[str] = None,
-    dni: Optional[str] = None,
     email: Optional[str] = None,
 ) -> dict:
     """
-    Registra un turno directamente en Supabase.
-    Calcula hora_fin según duración del slot del profesional.
+    Busca o crea el paciente por DNI y registra el turno en Supabase.
     """
-    # Calcular hora_fin
+    # Obtener o crear paciente
+    paciente_id = None
+    if dni:
+        paciente = await obtener_o_crear_paciente(nombre, apellido, dni, telefono, obra_social)
+        if paciente:
+            paciente_id = paciente.get("id")
+
+    if not paciente_id:
+        logger.warning("No se pudo obtener paciente_id — turno sin paciente vinculado")
+        return {"ok": False, "error": "No se pudo identificar al paciente"}
+
     hi = datetime.strptime(hora_inicio, "%H:%M")
     hf = hi + timedelta(minutes=duracion_min)
     hora_fin = hf.strftime("%H:%M:%S")
     hora_inicio_full = hi.strftime("%H:%M:%S")
 
-    cobertura = obra_social if obra_social and obra_social.lower() != "particular" else None
-
     turno = {
+        "paciente_id": paciente_id,
         "profesional_id": profesional_id,
         "fecha": fecha,
         "hora_inicio": hora_inicio_full,
@@ -259,7 +301,6 @@ async def registrar_turno_supabase(
 # ─── Horario del consultorio ──────────────────────────────────────────────────
 
 def obtener_horario() -> dict:
-    """Retorna si el consultorio está abierto ahora."""
     ahora = datetime.now()
     dia_semana = ahora.weekday()
     hora = ahora.hour
@@ -272,7 +313,7 @@ def obtener_horario() -> dict:
         esta_abierto = False
 
     return {
-        "horario": "Lunes a Viernes 9-19hs, Sábados 9-13hs",
+        "horario": "Lunes a Viernes 9-19hs, Sabados 9-13hs",
         "esta_abierto": esta_abierto,
         "dia_actual": DIAS_SEMANA[dia_semana],
     }
