@@ -103,17 +103,17 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
     for msg in historial[-6:]:  # últimos 6 mensajes
         texto_completo += " " + msg.get("content", "").lower()
 
-    # ¿Se menciona algún profesional?
-    profesional_id = detectar_profesional(texto_completo)
+    # ¿Se menciona algún profesional? Buscar primero en mensaje actual, luego en historial
+    profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(texto_completo)
 
     # ¿Se menciona alguna especialidad?
     especialidad = detectar_especialidad(texto_completo)
 
-    # Si se menciona un profesional o se pregunta por disponibilidad/fechas/turnos
-    palabras_disponibilidad = ["disponib", "fecha", "día", "dia", "horario", "turno", "cuando", "cuándo", "sábado", "sabado", "lunes", "martes", "miércoles", "miercoles", "jueves", "viernes"]
+    # Disparar consulta si hay profesional mencionado O si se pregunta por disponibilidad
+    palabras_disponibilidad = ["disponib", "fecha", "día", "dia", "horario", "turno", "cuando", "cuándo", "sábado", "sabado", "lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "quiero", "sacar", "agendar"]
     pregunta_disponibilidad = any(p in texto_completo for p in palabras_disponibilidad)
 
-    if profesional_id and pregunta_disponibilidad:
+    if profesional_id:
         fechas = await obtener_proximas_fechas_disponibles(profesional_id)
         if fechas:
             lineas = []
@@ -189,7 +189,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-sonnet-4-20250514",
             max_tokens=1024,
             system=system_prompt,
             messages=mensajes
