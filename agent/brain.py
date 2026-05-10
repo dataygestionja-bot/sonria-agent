@@ -113,7 +113,7 @@ def extraer_datos_confirmacion(historial: list[dict], respuesta: str, telefono: 
 
     # Fecha — patrón DD/MM
     fecha = None
-    match_fecha = re.search(r'\b(\d{1,2})/(\d{1,2})\b', texto_respuesta)
+    match_fecha = re.search(r'(\d{1,2})/(\d{1,2})', texto_respuesta)
     if match_fecha:
         dia = int(match_fecha.group(1))
         mes = int(match_fecha.group(2))
