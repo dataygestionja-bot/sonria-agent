@@ -165,6 +165,7 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
     """
     horarios = await obtener_horarios_profesional(profesional_id)
     dias_con_horario = {h["dia_semana"] for h in horarios}
+    logger.info(f"Horarios Rojas: {horarios} | dias_con_horario: {dias_con_horario}")
 
     resultados = []
     hoy = date.today()
