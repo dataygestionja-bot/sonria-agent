@@ -7,6 +7,7 @@ usando la API de Anthropic Claude.
 """
 import os
 import re
+import json
 import yaml
 import logging
 from anthropic import AsyncAnthropic
@@ -23,10 +24,8 @@ from agent.tools import (
 load_dotenv()
 logger = logging.getLogger("agentkit")
 
-# Cliente de Anthropic
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# IDs de profesionales
 PROFESIONALES = {
     "bruno ordoñez": "b5af188f-aa9e-4983-8365-92930cbc9eeb",
     "federico cabrera": "9cd6412e-e1e9-4b20-aa78-a9ba03ea240d",
@@ -35,15 +34,23 @@ PROFESIONALES = {
 }
 
 DURACION_SLOTS = {
-    "b5af188f-aa9e-4983-8365-92930cbc9eeb": 45,  # Bruno Ordoñez
-    "9cd6412e-e1e9-4b20-aa78-a9ba03ea240d": 30,  # Federico Cabrera
-    "318bdbf8-04dc-4953-b284-d3c5f429cbbf": 30,  # Florencia Celsi
-    "3b90bf47-16be-4116-b348-fd1bf2b9ef8c": 30,  # Fernando Rojas
+    "b5af188f-aa9e-4983-8365-92930cbc9eeb": 45,
+    "9cd6412e-e1e9-4b20-aa78-a9ba03ea240d": 30,
+    "318bdbf8-04dc-4953-b284-d3c5f429cbbf": 30,
+    "3b90bf47-16be-4116-b348-fd1bf2b9ef8c": 30,
+}
+
+MESES = {
+    "ene": "01", "feb": "02", "mar": "03", "abr": "04",
+    "may": "05", "jun": "06", "jul": "07", "ago": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dic": "12",
+    "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
+    "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
+    "septiembre": "09", "octubre": "10", "noviembre": "11", "diciembre": "12",
 }
 
 
 def cargar_config_prompts() -> dict:
-    """Lee toda la configuración desde config/prompts.yaml."""
     try:
         with open("config/prompts.yaml", "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
@@ -54,24 +61,22 @@ def cargar_config_prompts() -> dict:
 
 def cargar_system_prompt() -> str:
     config = cargar_config_prompts()
-    return config.get("system_prompt", "Eres un asistente útil. Responde en español.")
+    return config.get("system_prompt", "Eres un asistente util. Responde en espanol.")
 
 
 def obtener_mensaje_error() -> str:
     config = cargar_config_prompts()
-    return config.get("error_message", "Lo siento, estoy teniendo problemas técnicos.")
+    return config.get("error_message", "Lo siento, estoy teniendo problemas tecnicos.")
 
 
 def obtener_mensaje_fallback() -> str:
     config = cargar_config_prompts()
-    return config.get("fallback_message", "Disculpá, no entendí tu mensaje.")
+    return config.get("fallback_message", "Disculpa, no entendi tu mensaje.")
 
 
 def detectar_profesional(texto: str) -> str | None:
-    """Detecta si el texto menciona algún profesional."""
     texto_lower = texto.lower()
     for nombre, pid in PROFESIONALES.items():
-        # Buscar por apellido o nombre completo
         apellido = nombre.split()[-1]
         if apellido in texto_lower or nombre in texto_lower:
             return pid
@@ -79,38 +84,108 @@ def detectar_profesional(texto: str) -> str | None:
 
 
 def detectar_especialidad(texto: str) -> str | None:
-    """Detecta si el texto menciona una especialidad."""
     texto_lower = texto.lower()
     if any(p in texto_lower for p in ["ortodoncia", "brackets", "aparatos"]):
         return "Ortodoncia"
-    if any(p in texto_lower for p in ["cirugía", "cirugia", "extracción", "extraccion", "muela del juicio"]):
-        return "Cirugía"
-    if any(p in texto_lower for p in ["general", "limpieza", "caries", "blanqueamiento", "estética", "estetica", "implante"]):
-        return "Odontología General"
+    if any(p in texto_lower for p in ["cirugia", "extraccion", "muela del juicio"]):
+        return "Cirugia"
+    if any(p in texto_lower for p in ["general", "limpieza", "caries", "blanqueamiento", "estetica", "implante"]):
+        return "Odontologia General"
     return None
 
 
+def extraer_datos_turno(historial: list[dict], respuesta: str, telefono: str) -> dict | None:
+    texto_respuesta = respuesta.lower()
+
+    palabras_confirmacion = ["te agendi", "agendi", "te reserve", "quedaste agendado", "turno confirmado", "quedo agendado"]
+    es_confirmacion = any(p in texto_respuesta for p in palabras_confirmacion)
+    if not es_confirmacion:
+        return None
+
+    texto_conv = " ".join([m.get("content", "") for m in historial]) + " " + respuesta
+
+    profesional_id = detectar_profesional(texto_conv)
+    if not profesional_id:
+        return None
+
+    hora = None
+    match_hora = re.search(r'\b(\d{1,2}):(\d{2})\s*h?s?\b', texto_respuesta)
+    if match_hora:
+        hora = f"{int(match_hora.group(1)):02d}:{match_hora.group(2)}"
+    if not hora:
+        return None
+
+    fecha = None
+    match_fecha = re.search(r'\b(\d{1,2})/(\d{1,2})\b', texto_respuesta)
+    if match_fecha:
+        dia = int(match_fecha.group(1))
+        mes = int(match_fecha.group(2))
+        fecha = f"2026-{mes:02d}-{dia:02d}"
+
+    if not fecha:
+        match_fecha2 = re.search(r'\b(\d{1,2})\s+de\s+(\w+)\b', texto_respuesta)
+        if match_fecha2:
+            dia = int(match_fecha2.group(1))
+            mes_str = match_fecha2.group(2).lower()
+            mes_num = MESES.get(mes_str)
+            if mes_num:
+                fecha = f"2026-{mes_num}-{dia:02d}"
+
+    if not fecha:
+        return None
+
+    nombre = ""
+    apellido = ""
+    for msg in historial:
+        if msg.get("role") == "user":
+            contenido = msg.get("content", "").strip()
+            partes = contenido.split()
+            if 1 <= len(partes) <= 4 and not any(
+                p in contenido.lower() for p in ["turno", "quiero", "hola", "necesito", "si", "no", "galeno", "osde"]
+            ):
+                nombre = partes[0]
+                apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
+                break
+
+    obra_social = None
+    obras_conocidas = ["osde", "osecac", "ospe", "swiss medical", "galeno", "sancor salud"]
+    for obra in obras_conocidas:
+        if obra in texto_conv.lower():
+            obra_social = obra
+            break
+
+    motivo = "Consulta odontologica"
+    for msg in historial:
+        if msg.get("role") == "user":
+            contenido = msg.get("content", "").lower()
+            if any(p in contenido for p in ["ortodoncia", "limpieza", "caries", "blanqueamiento", "cirugia", "implante", "extraccion"]):
+                motivo = msg["content"]
+                break
+
+    return {
+        "profesional_id": profesional_id,
+        "fecha": fecha,
+        "hora_inicio": hora,
+        "duracion_min": DURACION_SLOTS.get(profesional_id, 30),
+        "nombre": nombre or "Paciente",
+        "apellido": apellido,
+        "telefono": telefono,
+        "motivo": motivo,
+        "obra_social": obra_social,
+    }
+
+
 async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> str:
-    """
-    Analiza la conversación y consulta Supabase para obtener
-    información real de disponibilidad.
-    Retorna un bloque de contexto para agregar al system prompt.
-    """
     contexto_parts = []
 
-    # Texto completo de la conversación para analizar
     texto_completo = mensaje.lower()
-    for msg in historial[-6:]:  # últimos 6 mensajes
+    for msg in historial[-6:]:
         texto_completo += " " + msg.get("content", "").lower()
 
-    # ¿Se menciona algún profesional? Buscar primero en mensaje actual, luego en historial
     profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(texto_completo)
-
-    # ¿Se menciona alguna especialidad?
     especialidad = detectar_especialidad(texto_completo)
 
-    # Disparar consulta si hay profesional mencionado O si se pregunta por disponibilidad
-    palabras_disponibilidad = ["disponib", "fecha", "día", "dia", "horario", "turno", "cuando", "cuándo", "sábado", "sabado", "lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "quiero", "sacar", "agendar"]
+    palabras_disponibilidad = ["disponib", "fecha", "dia", "horario", "turno", "cuando", "sabado", "lunes", "martes", "miercoles", "jueves", "viernes", "quiero", "sacar", "agendar"]
     pregunta_disponibilidad = any(p in texto_completo for p in palabras_disponibilidad)
 
     if profesional_id:
@@ -119,19 +194,18 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
             lineas = []
             for f in fechas:
                 slots_str = ", ".join(f["slots"])
-                lineas.append(f"  • {f['dia_nombre']} {f['fecha']}: {slots_str}")
+                lineas.append(f"  * {f['dia_nombre']} {f['fecha']}: {slots_str}")
             contexto_parts.append(
                 "DISPONIBILIDAD REAL (consultada ahora de la base de datos):\n" +
                 "\n".join(lineas) +
-                "\n⚠️ Usá EXACTAMENTE estos datos para responder. NO inventes otros horarios."
+                "\nUSA EXACTAMENTE estos datos. NO inventes otros horarios."
             )
         else:
             contexto_parts.append(
-                "DISPONIBILIDAD REAL: No hay turnos disponibles para este profesional en los próximos 14 días."
+                "DISPONIBILIDAD REAL: No hay turnos disponibles para este profesional en los proximos 14 dias."
             )
 
     elif especialidad and pregunta_disponibilidad:
-        # Buscar profesionales de esa especialidad y sus próximas fechas
         profesionales = await obtener_profesionales_por_especialidad(especialidad)
         for prof in profesionales:
             pid = prof["id"]
@@ -141,12 +215,11 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
                 lineas = []
                 for f in fechas:
                     slots_str = ", ".join(f["slots"])
-                    lineas.append(f"    • {f['dia_nombre']} {f['fecha']}: {slots_str}")
+                    lineas.append(f"    * {f['dia_nombre']} {f['fecha']}: {slots_str}")
                 contexto_parts.append(
                     f"DISPONIBILIDAD REAL de {nombre_prof}:\n" + "\n".join(lineas)
                 )
 
-    # Agregar obras sociales si se preguntan
     if any(p in texto_completo for p in ["obra social", "obrasocial", "cobertura", "osde", "swiss", "galeno", "sancor", "osecac", "ospe"]):
         obras = await obtener_obras_sociales()
         if obras:
@@ -154,22 +227,23 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
                 "OBRAS SOCIALES ACEPTADAS (datos reales): " + ", ".join(obras)
             )
 
+    contexto_parts.append(
+        "INSTRUCCION: Cuando confirmes un turno, SIEMPRE incluí 'te agendé' en tu respuesta "
+        "y menciona la fecha en formato DD/MM y la hora en formato HH:MM."
+    )
+
     if contexto_parts:
-        return "\n\n---\n🔴 INFORMACIÓN EN TIEMPO REAL DE LA BASE DE DATOS:\n" + "\n\n".join(contexto_parts) + "\n---"
+        return "\n\n---\nINFORMACION EN TIEMPO REAL:\n" + "\n\n".join(contexto_parts) + "\n---"
 
     return ""
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
-    """
-    Genera una respuesta usando Claude API con contexto real de Supabase.
-    """
+async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str = "") -> str:
     if not mensaje or len(mensaje.strip()) < 2:
         return obtener_mensaje_fallback()
 
     system_prompt = cargar_system_prompt()
 
-    # Consultar Supabase y agregar contexto real al system prompt
     try:
         contexto_real = await construir_contexto_supabase(mensaje, historial)
         if contexto_real:
@@ -178,13 +252,9 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     except Exception as e:
         logger.error(f"Error consultando Supabase: {e}")
 
-    # Construir mensajes para la API
     mensajes = []
     for msg in historial:
-        mensajes.append({
-            "role": msg["role"],
-            "content": msg["content"]
-        })
+        mensajes.append({"role": msg["role"], "content": msg["content"]})
     mensajes.append({"role": "user", "content": mensaje})
 
     try:
@@ -196,6 +266,20 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         )
         respuesta = response.content[0].text
         logger.info(f"Respuesta generada ({response.usage.input_tokens} in / {response.usage.output_tokens} out)")
+
+        # Registrar turno si la respuesta es una confirmacion
+        if telefono:
+            try:
+                datos = extraer_datos_turno(historial, respuesta, telefono)
+                if datos:
+                    resultado = await registrar_turno_supabase(**datos)
+                    if resultado.get("ok"):
+                        logger.info(f"Turno registrado en Supabase: {resultado.get('id')}")
+                    else:
+                        logger.warning("No se pudo registrar el turno en Supabase")
+            except Exception as e:
+                logger.error(f"Error registrando turno: {e}")
+
         return respuesta
     except Exception as e:
         logger.error(f"Error Claude API: {e}")
