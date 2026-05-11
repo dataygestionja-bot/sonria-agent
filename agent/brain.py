@@ -108,6 +108,7 @@ def extraer_datos_confirmacion(
 
     # BUG 1 FIX: trigger ampliado con múltiples palabras de confirmación
     es_confirmacion = any(p in texto_respuesta for p in PALABRAS_CONFIRMACION)
+    logger.warning("[DIAG] llamada. confirmacion=" + str(es_confirmacion) + ". resp=" + texto_respuesta[:80])
     if not es_confirmacion:
         logger.debug(f"No es confirmacion. Respuesta: {texto_respuesta[:80]}")
         return None
