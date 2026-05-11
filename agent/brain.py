@@ -218,7 +218,7 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
     for msg in historial[-6:]:
         texto_completo += " " + msg.get("content", "").lower()
 
-    profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(texto_completo)
+    profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(" ".join([m.get("content", "") for m in historial[-2:]]).lower())
     especialidad = detectar_especialidad(texto_completo)
     palabras_disponibilidad = ["disponib", "fecha", "dia", "horario", "turno", "cuando", "sabado", "lunes", "martes", "miercoles", "jueves", "viernes", "quiero", "sacar", "agendar"]
     pregunta_disponibilidad = any(p in texto_completo for p in palabras_disponibilidad)
