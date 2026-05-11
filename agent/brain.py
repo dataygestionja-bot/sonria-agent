@@ -40,11 +40,10 @@ MESES = {
     "septiembre": "09", "octubre": "10", "noviembre": "11", "diciembre": "12",
 }
 
-# BUG 1 FIX: trigger ampliado — Claude puede confirmar sin usar "agend"
 PALABRAS_CONFIRMACION = [
-    "agend", "reserv", "quedaste anotad", "quedó anotad",
+    "agend", "reserv", "quedaste anotad", "quedo anotad",
     "turno confirmado", "te registr", "listo, tu turno",
-    "quedó reservad", "quedo reservad",
+    "quedo reservad",
 ]
 
 
@@ -89,7 +88,6 @@ def detectar_especialidad(texto: str) -> str | None:
 
 
 def extraer_dni(texto: str) -> str | None:
-    """Extrae un DNI del texto (7-8 dígitos)."""
     match = re.search(r'(?<!\d)(\d{7,8})(?!\d)', texto)
     return match.group(1) if match else None
 
@@ -98,47 +96,36 @@ def extraer_datos_confirmacion(
     historial: list[dict],
     respuesta: str,
     telefono: str,
-    mensaje_actual: str = "",   # BUG 4 FIX: recibe el mensaje del usuario actual
+    mensaje_actual: str = "",
 ) -> dict | None:
-    """
-    Extrae todos los datos necesarios para registrar el turno
-    cuando Claude confirma el agendamiento.
-    """
     texto_respuesta = respuesta.lower()
 
-    # BUG 1 FIX: trigger ampliado con múltiples palabras de confirmación
     es_confirmacion = any(p in texto_respuesta for p in PALABRAS_CONFIRMACION)
+    logger.warning("[DIAG] extraer_datos_confirmacion llamada. confirmacion=" + str(es_confirmacion) + ". resp=" + texto_respuesta[:80])
+
     if not es_confirmacion:
-        logger.debug(f"No es confirmacion. Respuesta: {texto_respuesta[:80]}")
         return None
 
-    # BUG 4 FIX: incluir mensaje_actual en el texto de búsqueda
     texto_conv = (
         " ".join([m.get("content", "") for m in historial])
         + " " + mensaje_actual
         + " " + respuesta
     )
 
-    # Profesional
     profesional_id = detectar_profesional(texto_conv)
     if not profesional_id:
-        logger.warning("No se detectó profesional en la conversación")
+        logger.warning("[DIAG] No se detecto profesional")
         return None
 
-    # BUG 2 FIX: regex de hora más robusto, sin \b problemático
     match_hora = re.search(r'(\d{1,2}):(\d{2})\s*hs?', texto_respuesta)
     if not match_hora:
-        # fallback sin "hs"
         match_hora = re.search(r'(\d{1,2}):(\d{2})', texto_respuesta)
     if not match_hora:
-        logger.warning("No se detectó hora en la respuesta de confirmación")
+        logger.warning("[DIAG] No se detecto hora")
         return None
     hora = f"{int(match_hora.group(1)):02d}:{match_hora.group(2)}"
 
-    # BUG 3 FIX: buscar fecha DD/MM excluyendo lo que ya matcheó como hora
     fecha = None
-
-    # Primero intentar "DD de mes" (más preciso, no confunde con hora)
     match_fecha2 = re.search(r'\b(\d{1,2})\s+de\s+(\w+)\b', texto_respuesta)
     if match_fecha2:
         dia = int(match_fecha2.group(1))
@@ -146,7 +133,6 @@ def extraer_datos_confirmacion(
         if mes_num:
             fecha = f"2026-{mes_num}-{dia:02d}"
 
-    # Luego intentar DD/MM asegurándonos que el mes sea válido (1-12)
     if not fecha:
         for m in re.finditer(r'(\d{1,2})/(\d{1,2})', texto_respuesta):
             dia_c = int(m.group(1))
@@ -156,10 +142,9 @@ def extraer_datos_confirmacion(
                 break
 
     if not fecha:
-        logger.warning("No se detectó fecha en la respuesta de confirmación")
+        logger.warning("[DIAG] No se detecto fecha")
         return None
 
-    # BUG 4 FIX: buscar DNI incluyendo el mensaje_actual
     dni = None
     textos_dni = [mensaje_actual] + [m.get("content", "") for m in historial]
     for texto in textos_dni:
@@ -168,9 +153,8 @@ def extraer_datos_confirmacion(
             break
 
     if not dni:
-        logger.warning("No se encontró DNI en la conversación completa")
+        logger.warning("[DIAG] No se encontro DNI")
 
-    # Nombre y apellido
     nombre = ""
     apellido = ""
     for msg in historial:
@@ -188,7 +172,6 @@ def extraer_datos_confirmacion(
                 apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
                 break
 
-    # Obra social — BUG 5 FIX: normalizar a title case para Supabase
     OBRAS_MAP = {
         "osde": "OSDE",
         "osecac": "OSECAC",
@@ -203,7 +186,6 @@ def extraer_datos_confirmacion(
             obra_social = nombre_normalizado
             break
 
-    # Motivo
     motivo = "Consulta odontologica"
     for msg in historial:
         if msg.get("role") == "user":
@@ -225,7 +207,7 @@ def extraer_datos_confirmacion(
         "obra_social": obra_social,
     }
 
-    logger.info(f"[extraer_datos_confirmacion] datos={datos}")
+    logger.warning("[DIAG] datos extraidos=" + str(datos))
     return datos
 
 
@@ -268,7 +250,7 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
             contexto_parts.append("OBRAS SOCIALES ACEPTADAS: " + ", ".join(obras))
 
     contexto_parts.append(
-        "INSTRUCCION REGISTRO: Cuando confirmes el turno incluí 'te agendé' y "
+        "INSTRUCCION REGISTRO: Cuando confirmes el turno inclui 'te agende' y "
         "la fecha en formato DD/MM y la hora en formato HH:MM."
     )
 
@@ -304,20 +286,18 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         respuesta = response.content[0].text
         logger.info(f"Respuesta generada ({response.usage.input_tokens} in / {response.usage.output_tokens} out)")
 
-        # Registrar turno si es una confirmacion
         if telefono:
             try:
-                # BUG 4 FIX: pasar mensaje_actual para que el DNI del último mensaje sea visible
                 datos = extraer_datos_confirmacion(historial, respuesta, telefono, mensaje_actual=mensaje)
                 if datos:
                     if not datos.get("dni"):
-                        logger.warning("Confirmacion sin DNI — no se registra el turno")
+                        logger.warning("[DIAG] Confirmacion sin DNI — no se registra el turno")
                     else:
                         resultado = await registrar_turno_supabase(**datos)
                         if resultado.get("ok"):
-                            logger.info(f"Turno registrado: {resultado.get('id')}")
+                            logger.warning("[DIAG] Turno registrado OK: " + str(resultado.get("id")))
                         else:
-                            logger.warning(f"Error registrando turno: {resultado}")
+                            logger.warning("[DIAG] Error registrando turno: " + str(resultado))
             except Exception as e:
                 logger.error(f"Error en registro de turno: {e}")
 
