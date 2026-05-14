@@ -336,7 +336,7 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
 
 
 async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str = "") -> str:
-    if not mensaje or len(mensaje.strip()) < 2:
+    if not mensaje or len(mensaje.strip()) < 1:
         return obtener_mensaje_fallback()
 
     system_prompt = cargar_system_prompt()
