@@ -436,6 +436,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         # Detectar y ejecutar actualización de datos del paciente
         if telefono:
             try:
+                logger.warning(f"[DIAG] detectar_actualizacion_dato — paciente_id={paciente_id_actual}, respuesta={respuesta[:60]}")
                 actualizacion = detectar_actualizacion_dato(historial, respuesta, paciente_id=paciente_id_actual)
                 if actualizacion:
                     from agent.tools import actualizar_paciente, buscar_obra_social_id
