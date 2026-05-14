@@ -59,13 +59,15 @@ async def supabase_post(tabla: str, data: dict) -> dict:
 
 async def supabase_patch(tabla: str, filtro: dict, data: dict) -> dict:
     url = f"{SUPABASE_URL}/rest/v1/{tabla}"
-    params = {k: v for k, v in filtro.items()}
+    headers_patch = {**HEADERS, "Prefer": "return=representation"}
     async with httpx.AsyncClient() as client:
-        r = await client.patch(url, headers=HEADERS, params=params, json=data)
+        r = await client.patch(url, headers=headers_patch, params=filtro, json=data)
         if r.status_code in (200, 204):
             try:
                 resultado = r.json()
-                return resultado[0] if isinstance(resultado, list) and resultado else resultado
+                if isinstance(resultado, list) and resultado:
+                    return resultado[0]
+                return {"ok": True}
             except Exception:
                 return {"ok": True}
         logger.error(f"Supabase PATCH error {r.status_code}: {r.text}")
