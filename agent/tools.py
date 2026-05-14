@@ -151,14 +151,24 @@ async def crear_paciente(
     return resultado
 
 
+OBRAS_SOCIALES_IDS = {
+    "galeno": "6bbf5093-74ec-4dbf-a02e-edf5f26374df",
+    "osde": "6c4be89c-ecdc-4cf0-abff-556308f43037",
+    "osecac": "0fae4ef7-e94d-4f7e-8033-abdad690686c",
+    "ospe": "8699bc98-dd98-45d6-99e0-6c6b65562fc2",
+    "sancor salud": "5de29dcc-4e4a-4ef7-9fc3-85f250f2a986",
+    "swiss medical": "3d817068-8268-45f7-bca8-ff6abbfbc343",
+}
+
+
 async def buscar_obra_social_id(nombre_obra: str) -> str | None:
-    """Busca el ID de una obra social por nombre."""
-    resultados = await supabase_get("obras_sociales", {
-        "nombre": f"ilike.*{nombre_obra}*",
-        "activo": "eq.true",
-        "select": "id,nombre"
-    })
-    return resultados[0]["id"] if resultados else None
+    nombre_lower = nombre_obra.strip().lower()
+    if nombre_lower in OBRAS_SOCIALES_IDS:
+        return OBRAS_SOCIALES_IDS[nombre_lower]
+    for clave, obra_id in OBRAS_SOCIALES_IDS.items():
+        if clave in nombre_lower or nombre_lower in clave:
+            return obra_id
+    return None
 
 
 async def actualizar_paciente(paciente_id: str, datos: dict) -> dict:
