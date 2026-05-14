@@ -230,16 +230,18 @@ def extraer_datos_confirmacion(
 def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_id: str | None = None) -> dict | None:
     texto = respuesta.lower()
 
+    if not paciente_id:
+        return None
+
     PALABRAS_ACTUALIZACION = [
-        "quedarían así",
-        "quedarian asi",
-        "actualicé tu obra social",
-        "actualice tu obra social",
+        "actualicé", "actualice", "cambié", "cambie", "modific",
+        "registr", "anot", "quedarían así", "quedarian asi",
+        "tu obra social", "nueva obra social",
     ]
     if not any(p in texto for p in PALABRAS_ACTUALIZACION):
         return None
 
-    if not paciente_id:
+    if any(p in texto for p in ["agend", "reserv", "turno confirmado"]):
         return None
 
     datos_actualizar = {}
@@ -264,6 +266,10 @@ def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_
     match_tel = re.search(r'\b(549\d{10}|\d{10,13})\b', texto)
     if match_tel:
         datos_actualizar["telefono"] = match_tel.group(1)
+
+    match_email = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', texto)
+    if match_email:
+        datos_actualizar["email"] = match_email.group(0)
 
     if not datos_actualizar:
         return None
