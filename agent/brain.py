@@ -230,7 +230,11 @@ def extraer_datos_confirmacion(
 def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_id: str | None = None) -> dict | None:
     texto = respuesta.lower()
 
-    if not any(p in texto for p in ["actualic", "cambié", "cambie", "actualicé", "modific"]):
+    PALABRAS_ACTUALIZACION = [
+        "actualic", "cambié", "cambie", "actualicé", "modific",
+        "registr", "anot", "guard", "tu obra social", "quedó como", "quedo como"
+    ]
+    if not any(p in texto for p in PALABRAS_ACTUALIZACION):
         return None
 
     if not paciente_id:
