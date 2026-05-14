@@ -231,8 +231,10 @@ def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_
     texto = respuesta.lower()
 
     PALABRAS_ACTUALIZACION = [
-        "actualic", "cambié", "cambie", "actualicé", "modific",
-        "registr", "anot", "guard", "tu obra social", "quedó como", "quedo como"
+        "quedarían así",
+        "quedarian asi",
+        "actualicé tu obra social",
+        "actualice tu obra social",
     ]
     if not any(p in texto for p in PALABRAS_ACTUALIZACION):
         return None
