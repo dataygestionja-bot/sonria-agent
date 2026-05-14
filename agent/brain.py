@@ -272,7 +272,7 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
     dni = extraer_dni(mensaje)
 
     if not dni:
-        for msg in historial[-4:]:
+        for msg in historial:
             if msg.get("role") == "user":
                 dni = extraer_dni(msg.get("content", ""))
                 if dni:
