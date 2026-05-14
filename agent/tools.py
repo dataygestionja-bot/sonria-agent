@@ -172,6 +172,23 @@ async def actualizar_paciente(paciente_id: str, datos: dict) -> dict:
     return resultado
 
 
+async def actualizar_obra_social_paciente(paciente_id: str, nombre_obra_social: str) -> dict:
+    obra_social_id = await buscar_obra_social_id(nombre_obra_social)
+    if not obra_social_id:
+        return {"exito": False, "mensaje": "Obra social no encontrada."}
+
+    resultado = await supabase_patch(
+        "pacientes",
+        {"id": f"eq.{paciente_id}"},
+        {"obra_social_id": obra_social_id}
+    )
+    return {
+        "exito": True,
+        "mensaje": f"Obra social actualizada a {nombre_obra_social}.",
+        "obra_social_id": obra_social_id
+    }
+
+
 async def obtener_o_crear_paciente(
     nombre: str,
     apellido: str,
