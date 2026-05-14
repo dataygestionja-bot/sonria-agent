@@ -227,6 +227,52 @@ def extraer_datos_confirmacion(
     return datos
 
 
+def detectar_actualizacion_dato(historial: list[dict], respuesta: str) -> dict | None:
+    texto = respuesta.lower()
+
+    if not any(p in texto for p in ["actualic", "cambié", "cambie", "actualicé", "modific"]):
+        return None
+
+    paciente_id = None
+    for msg in historial:
+        if msg.get("role") == "assistant":
+            m = re.search(r"ID:\s*([a-f0-9\-]{36})", msg.get("content", ""))
+            if m:
+                paciente_id = m.group(1)
+                break
+
+    if not paciente_id:
+        return None
+
+    datos_actualizar = {}
+
+    OBRAS_MAP = {
+        "osde": "OSDE",
+        "osecac": "OSECAC",
+        "ospe": "OSPE",
+        "swiss medical": "Swiss Medical",
+        "galeno": "Galeno",
+        "sancor salud": "Sancor Salud",
+        "particular": None,
+    }
+    for clave, valor in OBRAS_MAP.items():
+        if clave in texto:
+            if valor:
+                datos_actualizar["obra_social_nombre"] = valor
+            else:
+                datos_actualizar["obra_social_id"] = None
+            break
+
+    match_tel = re.search(r'\b(549\d{10}|\d{10,13})\b', texto)
+    if match_tel:
+        datos_actualizar["telefono"] = match_tel.group(1)
+
+    if not datos_actualizar:
+        return None
+
+    return {"paciente_id": paciente_id, "datos": datos_actualizar}
+
+
 async def construir_contexto_paciente(mensaje: str, historial: list[dict], telefono: str) -> str:
     """
     Busca el DNI en el mensaje actual o en el historial reciente.
@@ -382,6 +428,23 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                             logger.warning("[DIAG] Error registrando turno: " + str(resultado))
             except Exception as e:
                 logger.error(f"Error en registro de turno: {e}")
+
+        # Detectar y ejecutar actualización de datos del paciente
+        if telefono:
+            try:
+                actualizacion = detectar_actualizacion_dato(historial, respuesta)
+                if actualizacion:
+                    from agent.tools import actualizar_paciente, buscar_obra_social_id
+                    datos = actualizacion["datos"]
+                    paciente_id = actualizacion["paciente_id"]
+                    if "obra_social_nombre" in datos:
+                        obra_id = await buscar_obra_social_id(datos.pop("obra_social_nombre"))
+                        if obra_id:
+                            datos["obra_social_id"] = obra_id
+                    resultado = await actualizar_paciente(paciente_id, datos)
+                    logger.warning("[DIAG] Paciente actualizado: " + str(resultado))
+            except Exception as e:
+                logger.error(f"Error actualizando paciente: {e}")
 
         return respuesta
     except Exception as e:
