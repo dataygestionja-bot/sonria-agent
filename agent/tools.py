@@ -63,8 +63,11 @@ async def supabase_patch(tabla: str, filtro: dict, data: dict) -> dict:
     async with httpx.AsyncClient() as client:
         r = await client.patch(url, headers=HEADERS, params=params, json=data)
         if r.status_code in (200, 204):
-            resultado = r.json()
-            return resultado[0] if isinstance(resultado, list) else resultado
+            try:
+                resultado = r.json()
+                return resultado[0] if isinstance(resultado, list) and resultado else resultado
+            except Exception:
+                return {"ok": True}
         logger.error(f"Supabase PATCH error {r.status_code}: {r.text}")
         return {}
 
