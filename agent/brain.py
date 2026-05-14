@@ -227,19 +227,11 @@ def extraer_datos_confirmacion(
     return datos
 
 
-def detectar_actualizacion_dato(historial: list[dict], respuesta: str) -> dict | None:
+def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_id: str | None = None) -> dict | None:
     texto = respuesta.lower()
 
     if not any(p in texto for p in ["actualic", "cambié", "cambie", "actualicé", "modific"]):
         return None
-
-    paciente_id = None
-    for msg in historial:
-        if msg.get("role") == "assistant":
-            m = re.search(r"ID:\s*([a-f0-9\-]{36})", msg.get("content", ""))
-            if m:
-                paciente_id = m.group(1)
-                break
 
     if not paciente_id:
         return None
@@ -273,18 +265,12 @@ def detectar_actualizacion_dato(historial: list[dict], respuesta: str) -> dict |
     return {"paciente_id": paciente_id, "datos": datos_actualizar}
 
 
-async def construir_contexto_paciente(mensaje: str, historial: list[dict], telefono: str) -> str:
-    """
-    Busca el DNI en el mensaje actual o en el historial reciente.
-    Si lo encuentra, consulta Supabase y devuelve el contexto del paciente.
-    También busca por teléfono si es el primer mensaje.
-    """
+async def construir_contexto_paciente(mensaje: str, historial: list[dict], telefono: str) -> tuple[str, str | None]:
     contexto = ""
+    paciente_id = None
 
-    # Buscar DNI en el mensaje actual primero
     dni = extraer_dni(mensaje)
 
-    # Si no hay DNI en el mensaje actual, buscarlo en los últimos mensajes del usuario
     if not dni:
         for msg in historial[-4:]:
             if msg.get("role") == "user":
@@ -295,6 +281,7 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
     if dni:
         paciente = await buscar_paciente_por_dni(dni)
         if paciente:
+            paciente_id = paciente.get("id")
             obra = paciente.get("obra_social_nombre") or "Particular"
             contexto = (
                 f"\n\nPACIENTE ENCONTRADO EN BD:\n"
@@ -311,9 +298,9 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
                 f"Informá al paciente que no está registrado y pedí nombre y apellido para darlo de alta."
             )
     elif telefono and len(historial) == 0:
-        # Primer mensaje — buscar por teléfono
         paciente = await buscar_paciente_por_telefono(telefono)
         if paciente:
+            paciente_id = paciente.get("id")
             obra = paciente.get("obra_social_nombre") or "Particular"
             contexto = (
                 f"\n\nPACIENTE RECONOCIDO POR TELEFONO:\n"
@@ -324,7 +311,7 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
                 f"Saludá al paciente por su nombre. Igualmente pedí su DNI para confirmar identidad."
             )
 
-    return contexto
+    return contexto, paciente_id
 
 
 async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> str:
@@ -394,7 +381,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
 
     try:
         # Contexto del paciente (DNI / teléfono)
-        contexto_paciente = await construir_contexto_paciente(mensaje, historial, telefono)
+        contexto_paciente, paciente_id_actual = await construir_contexto_paciente(mensaje, historial, telefono)
         if contexto_paciente:
             system_prompt += contexto_paciente
 
@@ -437,7 +424,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         # Detectar y ejecutar actualización de datos del paciente
         if telefono:
             try:
-                actualizacion = detectar_actualizacion_dato(historial, respuesta)
+                actualizacion = detectar_actualizacion_dato(historial, respuesta, paciente_id=paciente_id_actual)
                 if actualizacion:
                     from agent.tools import actualizar_paciente, buscar_obra_social_id
                     datos = actualizacion["datos"]
