@@ -310,6 +310,15 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
     return resultados
 
 
+async def listar_obras_sociales() -> dict:
+    resultados = await supabase_get("obras_sociales", {
+        "activo": "eq.true",
+        "select": "id,nombre",
+        "order": "nombre"
+    })
+    return {"obras_sociales": resultados}
+
+
 async def obtener_obras_sociales() -> list[str]:
     os_list = await supabase_get("obras_sociales", {"activo": "eq.true", "select": "nombre"})
     return [o["nombre"] for o in os_list]
