@@ -57,16 +57,68 @@ async def supabase_post(tabla: str, data: dict) -> dict:
         return {}
 
 
+async def supabase_patch(tabla: str, filtro: dict, data: dict) -> dict:
+    url = f"{SUPABASE_URL}/rest/v1/{tabla}"
+    params = {k: v for k, v in filtro.items()}
+    async with httpx.AsyncClient() as client:
+        r = await client.patch(url, headers=HEADERS, params=params, json=data)
+        if r.status_code in (200, 204):
+            resultado = r.json()
+            return resultado[0] if isinstance(resultado, list) else resultado
+        logger.error(f"Supabase PATCH error {r.status_code}: {r.text}")
+        return {}
+
+
 # ─── Pacientes ────────────────────────────────────────────────────────────────
 
 async def buscar_paciente_por_dni(dni: str) -> dict | None:
-    """Busca un paciente por DNI. Retorna el paciente o None."""
+    """Busca un paciente por DNI. Retorna el paciente con nombre de obra social o None."""
     resultados = await supabase_get("pacientes", {
         "dni": f"eq.{dni.strip()}",
         "activo": "eq.true",
         "select": "id,nombre,apellido,dni,telefono,obra_social_id"
     })
-    return resultados[0] if resultados else None
+    if not resultados:
+        return None
+
+    paciente = resultados[0]
+
+    # Obtener nombre de obra social si tiene
+    if paciente.get("obra_social_id"):
+        obras = await supabase_get("obras_sociales", {
+            "id": f"eq.{paciente['obra_social_id']}",
+            "select": "nombre"
+        })
+        if obras:
+            paciente["obra_social_nombre"] = obras[0]["nombre"]
+
+    return paciente
+
+
+async def buscar_paciente_por_telefono(telefono: str) -> dict | None:
+    """Busca un paciente por número de teléfono."""
+    # Normalizar teléfono — quitar + y buscar variantes
+    telefono_limpio = telefono.replace("+", "").replace(" ", "")
+
+    resultados = await supabase_get("pacientes", {
+        "telefono": f"ilike.*{telefono_limpio[-10:]}*",
+        "activo": "eq.true",
+        "select": "id,nombre,apellido,dni,telefono,obra_social_id"
+    })
+    if not resultados:
+        return None
+
+    paciente = resultados[0]
+
+    if paciente.get("obra_social_id"):
+        obras = await supabase_get("obras_sociales", {
+            "id": f"eq.{paciente['obra_social_id']}",
+            "select": "nombre"
+        })
+        if obras:
+            paciente["obra_social_nombre"] = obras[0]["nombre"]
+
+    return paciente
 
 
 async def crear_paciente(
@@ -104,6 +156,17 @@ async def buscar_obra_social_id(nombre_obra: str) -> str | None:
     return resultados[0]["id"] if resultados else None
 
 
+async def actualizar_paciente(paciente_id: str, datos: dict) -> dict:
+    """Actualiza datos de un paciente existente."""
+    resultado = await supabase_patch(
+        "pacientes",
+        {"id": f"eq.{paciente_id}"},
+        datos
+    )
+    logger.info(f"Paciente actualizado: {paciente_id}")
+    return resultado
+
+
 async def obtener_o_crear_paciente(
     nombre: str,
     apellido: str,
@@ -115,18 +178,15 @@ async def obtener_o_crear_paciente(
     Busca el paciente por DNI. Si no existe, lo crea.
     Retorna el paciente con su ID.
     """
-    # Buscar primero
     paciente = await buscar_paciente_por_dni(dni)
     if paciente:
         logger.info(f"Paciente encontrado: {paciente['id']}")
         return paciente
 
-    # Buscar obra social ID si se proporcionó
     obra_social_id = None
     if obra_social and obra_social.lower() != "particular":
         obra_social_id = await buscar_obra_social_id(obra_social)
 
-    # Crear paciente nuevo
     nuevo = await crear_paciente(nombre, apellido, dni, telefono, obra_social_id)
     return nuevo if nuevo.get("id") else None
 
@@ -248,10 +308,7 @@ async def registrar_turno_supabase(
     obra_social: Optional[str] = None,
     email: Optional[str] = None,
 ) -> dict:
-    """
-    Busca o crea el paciente por DNI y registra el turno en Supabase.
-    """
-    # Obtener o crear paciente
+    """Busca o crea el paciente por DNI y registra el turno en Supabase."""
     paciente_id = None
     if dni:
         paciente = await obtener_o_crear_paciente(nombre, apellido, dni, telefono, obra_social)

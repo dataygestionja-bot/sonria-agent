@@ -10,6 +10,8 @@ from agent.tools import (
     obtener_proximas_fechas_disponibles,
     obtener_obras_sociales,
     registrar_turno_supabase,
+    buscar_paciente_por_dni,
+    buscar_paciente_por_telefono,
 )
 
 load_dotenv()
@@ -155,6 +157,7 @@ def extraer_datos_confirmacion(
     if not dni:
         logger.warning("[DIAG] No se encontro DNI")
 
+    # Nombre y apellido — buscar en historial
     nombre = ""
     apellido = ""
     for msg in historial:
@@ -171,6 +174,19 @@ def extraer_datos_confirmacion(
                 nombre = partes[0]
                 apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
                 break
+
+    # Nombre desde contexto del paciente registrado (buscar en respuestas del asistente)
+    if not nombre:
+        for msg in historial:
+            if msg.get("role") == "assistant":
+                contenido = msg.get("content", "")
+                m = re.search(r"Nombre:\s*([^\n•]+)", contenido)
+                if m:
+                    partes = m.group(1).strip().split()
+                    if partes:
+                        nombre = partes[0]
+                        apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
+                    break
 
     OBRAS_MAP = {
         "osde": "OSDE",
@@ -211,6 +227,60 @@ def extraer_datos_confirmacion(
     return datos
 
 
+async def construir_contexto_paciente(mensaje: str, historial: list[dict], telefono: str) -> str:
+    """
+    Busca el DNI en el mensaje actual o en el historial reciente.
+    Si lo encuentra, consulta Supabase y devuelve el contexto del paciente.
+    También busca por teléfono si es el primer mensaje.
+    """
+    contexto = ""
+
+    # Buscar DNI en el mensaje actual primero
+    dni = extraer_dni(mensaje)
+
+    # Si no hay DNI en el mensaje actual, buscarlo en los últimos mensajes del usuario
+    if not dni:
+        for msg in historial[-4:]:
+            if msg.get("role") == "user":
+                dni = extraer_dni(msg.get("content", ""))
+                if dni:
+                    break
+
+    if dni:
+        paciente = await buscar_paciente_por_dni(dni)
+        if paciente:
+            obra = paciente.get("obra_social_nombre") or "Particular"
+            contexto = (
+                f"\n\nPACIENTE ENCONTRADO EN BD:\n"
+                f"- ID: {paciente.get('id')}\n"
+                f"- Nombre: {paciente.get('nombre')} {paciente.get('apellido')}\n"
+                f"- DNI: {paciente.get('dni')}\n"
+                f"- Telefono: {paciente.get('telefono')}\n"
+                f"- Obra social: {obra}\n"
+                f"Mostrá estos datos al paciente y pedí confirmación."
+            )
+        else:
+            contexto = (
+                f"\n\nPACIENTE NO ENCONTRADO EN BD (DNI: {dni}).\n"
+                f"Informá al paciente que no está registrado y pedí nombre y apellido para darlo de alta."
+            )
+    elif telefono and len(historial) == 0:
+        # Primer mensaje — buscar por teléfono
+        paciente = await buscar_paciente_por_telefono(telefono)
+        if paciente:
+            obra = paciente.get("obra_social_nombre") or "Particular"
+            contexto = (
+                f"\n\nPACIENTE RECONOCIDO POR TELEFONO:\n"
+                f"- Nombre: {paciente.get('nombre')} {paciente.get('apellido')}\n"
+                f"- DNI: {paciente.get('dni')}\n"
+                f"- Telefono: {paciente.get('telefono')}\n"
+                f"- Obra social: {obra}\n"
+                f"Saludá al paciente por su nombre. Igualmente pedí su DNI para confirmar identidad."
+            )
+
+    return contexto
+
+
 async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> str:
     contexto_parts = []
 
@@ -218,9 +288,15 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
     for msg in historial[-6:]:
         texto_completo += " " + msg.get("content", "").lower()
 
-    profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(" ".join([m.get("content", "") for m in historial[-2:]]).lower())
+    profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(
+        " ".join([m.get("content", "") for m in historial[-2:]]).lower()
+    )
     especialidad = detectar_especialidad(texto_completo)
-    palabras_disponibilidad = ["disponib", "fecha", "dia", "horario", "turno", "cuando", "sabado", "lunes", "martes", "miercoles", "jueves", "viernes", "quiero", "sacar", "agendar"]
+    palabras_disponibilidad = [
+        "disponib", "fecha", "dia", "horario", "turno", "cuando",
+        "sabado", "lunes", "martes", "miercoles", "jueves", "viernes",
+        "quiero", "sacar", "agendar", "solicitar"
+    ]
     pregunta_disponibilidad = any(p in texto_completo for p in palabras_disponibilidad)
 
     if profesional_id:
@@ -266,6 +342,12 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
     system_prompt = cargar_system_prompt()
 
     try:
+        # Contexto del paciente (DNI / teléfono)
+        contexto_paciente = await construir_contexto_paciente(mensaje, historial, telefono)
+        if contexto_paciente:
+            system_prompt += contexto_paciente
+
+        # Contexto de disponibilidad y obras sociales
         contexto_real = await construir_contexto_supabase(mensaje, historial)
         if contexto_real:
             system_prompt += contexto_real
