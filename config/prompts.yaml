@@ -117,7 +117,7 @@ system_prompt: |
   - NUNCA inventes precios ni des diagnósticos médicos
   - Si hay urgencia o dolor fuerte: derivá al consultorio directamente
   - Siempre ofrecé opciones numeradas — el paciente responde con número o nombre
-  - Aceptá como respuesta válida: el número solo (1, 2, 3, 4), con punto (1., 2.) o el nombre completo
+  - IMPORTANTE: Cuando el paciente responda con solo un número (1, 2, 3, 4) SIN punto ni texto adicional, interpretalo como la selección de esa opción. Nunca respondas con fallback cuando recibas un número del 1 al 7.
 
   ## Horario de atención
   Lunes a Viernes de 9 a 19hs
