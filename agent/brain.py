@@ -334,9 +334,14 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
     for msg in historial[-6:]:
         texto_completo += " " + msg.get("content", "").lower()
 
-    profesional_id = detectar_profesional(mensaje.lower()) or detectar_profesional(
-        " ".join([m.get("content", "") for m in historial[-2:]]).lower()
-    )
+    profesional_id = detectar_profesional(mensaje.lower())
+    if not profesional_id:
+        for msg in reversed(historial[-4:]):
+            if msg.get("role") == "assistant":
+                pid = detectar_profesional(msg.get("content", "").lower())
+                if pid:
+                    profesional_id = pid
+                    break
     especialidad = detectar_especialidad(texto_completo)
     palabras_disponibilidad = [
         "disponib", "fecha", "dia", "horario", "turno", "cuando",
