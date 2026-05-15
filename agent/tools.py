@@ -334,6 +334,40 @@ async def obtener_obras_sociales() -> list[str]:
     return [o["nombre"] for o in os_list]
 
 
+# ─── Turnos del paciente ──────────────────────────────────────────────────────
+
+async def obtener_turnos_paciente(paciente_id: str) -> list[dict]:
+    """Trae los turnos futuros confirmados del paciente."""
+    hoy = date.today().strftime("%Y-%m-%d")
+    turnos = await supabase_get("turnos", {
+        "paciente_id": f"eq.{paciente_id}",
+        "fecha": f"gte.{hoy}",
+        "estado": "eq.confirmado",
+        "select": "id,fecha,hora_inicio,motivo_consulta,profesional_id",
+        "order": "fecha.asc"
+    })
+    for t in turnos:
+        if t.get("profesional_id"):
+            profs = await supabase_get("profesionales", {
+                "id": f"eq.{t['profesional_id']}",
+                "select": "nombre,apellido"
+            })
+            if profs:
+                t["profesional"] = f"{profs[0]['nombre']} {profs[0]['apellido']}"
+    return turnos
+
+
+async def cancelar_turno(turno_id: str) -> dict:
+    """Cambia el estado del turno a cancelado."""
+    resultado = await supabase_patch(
+        "turnos",
+        {"id": f"eq.{turno_id}"},
+        {"estado": "cancelado"}
+    )
+    logger.info(f"Turno cancelado: {turno_id}")
+    return resultado
+
+
 # ─── Registrar turno ──────────────────────────────────────────────────────────
 
 async def registrar_turno_supabase(
