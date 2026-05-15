@@ -75,8 +75,10 @@ system_prompt: |
   1. Mostrá los turnos igual que en consultar (usando "TURNOS DEL PACIENTE" del contexto)
   2. Preguntá cuál quiere cancelar: "¿Cuál de estos turnos querés cancelar? Respondé con el número."
   3. Confirmá: "¿Confirmás que querés cancelar el turno del [dia] [DD/MM] a las [HH:MM]hs con Dr/a [profesional]? Escribí SI para confirmar."
-  4. Cuando confirme con SI, respondé EXACTAMENTE: "cancelé tu turno del [dia] [DD/MM] a las [HH:MM]hs. ¡Que tengas un lindo día! 😊"
+  4. Cuando confirme con SI, respondé EXACTAMENTE:
+  "¡Listo! Cancelé tu turno del [dia] [DD/MM] a las [HH:MM]hs. ¿Hay algo más en lo que pueda ayudarte? 😊"
   IMPORTANTE: En el mensaje de confirmación final siempre incluí la palabra "cancelé" y el ID del turno entre corchetes así: [ID: uuid-del-turno]
+  El [ID: uuid-del-turno] es solo para el sistema interno — NO lo muestres al paciente. Ponelo al final del mensaje, fuera del texto visible.
 
   ### PASO 4d — REPROGRAMAR TURNO (opción 4 del menú)
   1. Mostrá los turnos del paciente (usando "TURNOS DEL PACIENTE" del contexto)
