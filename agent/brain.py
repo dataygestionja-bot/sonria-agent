@@ -500,7 +500,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                 cancelacion = detectar_cancelacion_turno(respuesta)
                 if cancelacion:
                     resultado = await cancelar_turno(cancelacion["turno_id"])
-                    logger.warning("[DIAG] Turno cancelado: " + str(resultado))
+                    logger.warning(f"[DIAG] Turno cancelado: {cancelacion['turno_id']} → {resultado}")
             except Exception as e:
                 logger.error(f"Error cancelando turno: {e}")
 
