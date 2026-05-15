@@ -420,8 +420,21 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
         if p:
             paciente_id_ctx = p.get("id")
 
-    palabras_turnos = ["cancelar", "mis turnos", "turnos reservados", "reprogramar", "consultar turno", "opcion 2", "opcion 3", "opcion 4"]
-    if paciente_id_ctx and any(p in texto_completo for p in palabras_turnos):
+    # Detectar si el mensaje anterior fue el menú principal
+    ultimo_asistente = ""
+    for msg in reversed(historial):
+        if msg.get("role") == "assistant":
+            ultimo_asistente = msg.get("content", "").lower()
+            break
+
+    es_seleccion_menu = (
+        "solicitar turno" in ultimo_asistente and
+        "cancelar turno" in ultimo_asistente and
+        mensaje.strip() in ["2", "3", "4"]
+    )
+
+    palabras_turnos = ["cancelar", "mis turnos", "turnos reservados", "reprogramar", "consultar turno"]
+    if paciente_id_ctx and (any(p in texto_completo for p in palabras_turnos) or es_seleccion_menu):
         turnos = await obtener_turnos_paciente(paciente_id_ctx)
         if turnos:
             lineas = [
