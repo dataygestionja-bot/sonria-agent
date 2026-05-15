@@ -326,6 +326,29 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
     return contexto, paciente_id
 
 
+async def construir_contexto_turnos(paciente_id: str) -> str:
+    from agent.tools import obtener_turnos_paciente
+    turnos = await obtener_turnos_paciente(paciente_id)
+    if not turnos:
+        return "\n\nTURNOS DEL PACIENTE: No tiene turnos futuros confirmados."
+    lineas = []
+    for t in turnos:
+        fecha = t.get("fecha", "")
+        hora = t.get("hora_inicio", "")[:5]
+        prof = t.get("profesional", "desconocido")
+        turno_id = t.get("id", "")
+        lineas.append(f"  - ID: {turno_id} | {fecha} {hora}hs con {prof}")
+    return "\n\nTURNOS DEL PACIENTE:\n" + "\n".join(lineas)
+
+
+def detectar_cancelacion_turno(respuesta: str) -> str | None:
+    texto = respuesta.lower()
+    if "cancelé" not in texto and "cancele" not in texto:
+        return None
+    match = re.search(r'\[id:\s*([a-f0-9\-]{36})\]', respuesta, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
 async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> str:
     contexto_parts = []
 
@@ -397,6 +420,11 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         if contexto_paciente:
             system_prompt += contexto_paciente
 
+        # Turnos futuros del paciente
+        if paciente_id_actual:
+            contexto_turnos = await construir_contexto_turnos(paciente_id_actual)
+            system_prompt += contexto_turnos
+
         # Contexto de disponibilidad y obras sociales
         contexto_real = await construir_contexto_supabase(mensaje, historial)
         if contexto_real:
@@ -432,6 +460,17 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                             logger.warning("[DIAG] Error registrando turno: " + str(resultado))
             except Exception as e:
                 logger.error(f"Error en registro de turno: {e}")
+
+        # Detectar y ejecutar cancelación de turno
+        if telefono:
+            try:
+                turno_id = detectar_cancelacion_turno(respuesta)
+                if turno_id:
+                    from agent.tools import cancelar_turno
+                    resultado = await cancelar_turno(turno_id)
+                    logger.warning("[DIAG] Turno cancelado: " + str(resultado))
+            except Exception as e:
+                logger.error(f"Error cancelando turno: {e}")
 
         # Detectar y ejecutar actualización de datos del paciente
         if telefono:
