@@ -343,12 +343,18 @@ async def construir_contexto_turnos(paciente_id: str) -> str:
     return "\n\nTURNOS DEL PACIENTE:\n" + "\n".join(lineas)
 
 
-def detectar_cancelacion_turno(respuesta: str) -> str | None:
+def detectar_cancelacion_turno(respuesta: str) -> dict | None:
+    """Detecta si Claude confirmó una cancelación y extrae el turno_id."""
     texto = respuesta.lower()
-    if "cancelé" not in texto and "cancele" not in texto:
+    if "cancelé" not in texto:
         return None
-    match = re.search(r'\[id:\s*([a-f0-9\-]{36})\]', respuesta, re.IGNORECASE)
-    return match.group(1) if match else None
+    match = re.search(
+        r'\[id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]',
+        texto
+    )
+    if not match:
+        return None
+    return {"turno_id": match.group(1)}
 
 
 async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> str:
@@ -466,10 +472,9 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         # Detectar y ejecutar cancelación de turno
         if telefono:
             try:
-                turno_id = detectar_cancelacion_turno(respuesta)
-                if turno_id:
-                    from agent.tools import cancelar_turno
-                    resultado = await cancelar_turno(turno_id)
+                cancelacion = detectar_cancelacion_turno(respuesta)
+                if cancelacion:
+                    resultado = await cancelar_turno(cancelacion["turno_id"])
                     logger.warning("[DIAG] Turno cancelado: " + str(resultado))
             except Exception as e:
                 logger.error(f"Error cancelando turno: {e}")
