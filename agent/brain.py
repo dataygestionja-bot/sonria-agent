@@ -12,6 +12,8 @@ from agent.tools import (
     registrar_turno_supabase,
     buscar_paciente_por_dni,
     buscar_paciente_por_telefono,
+    obtener_turnos_paciente,
+    cancelar_turno,
 )
 
 load_dotenv()
