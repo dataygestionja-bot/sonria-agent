@@ -140,7 +140,7 @@ async def crear_paciente(
         "dni": dni.strip(),
         "telefono": telefono,
         "activo": True,
-        "pendiente_validacion": False,
+        "pendiente_validacion": True,
     }
     if obra_social_id:
         paciente["obra_social_id"] = obra_social_id
