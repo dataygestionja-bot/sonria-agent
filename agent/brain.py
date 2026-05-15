@@ -406,6 +406,36 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
         if obras:
             contexto_parts.append("OBRAS SOCIALES ACEPTADAS: " + ", ".join(obras))
 
+    # Inyectar turnos del paciente si pide cancelar, consultar o reprogramar
+    paciente_id_ctx = None
+    dni_ctx = extraer_dni(mensaje)
+    if not dni_ctx:
+        for msg in historial:
+            if msg.get("role") == "user":
+                dni_ctx = extraer_dni(msg.get("content", ""))
+                if dni_ctx:
+                    break
+    if dni_ctx:
+        p = await buscar_paciente_por_dni(dni_ctx)
+        if p:
+            paciente_id_ctx = p.get("id")
+
+    palabras_turnos = ["cancelar", "mis turnos", "turnos reservados", "reprogramar", "consultar turno", "opcion 2", "opcion 3", "opcion 4"]
+    if paciente_id_ctx and any(p in texto_completo for p in palabras_turnos):
+        turnos = await obtener_turnos_paciente(paciente_id_ctx)
+        if turnos:
+            lineas = [
+                f"  - ID: {t['id']} | {t['fecha']} {t['hora_inicio'][:5]}hs | "
+                f"Dr/a {t.get('profesional', '?')} | {t.get('motivo_consulta', '')}"
+                for t in turnos
+            ]
+            contexto_parts.append(
+                "TURNOS DEL PACIENTE:\n" + "\n".join(lineas) +
+                "\nUsá el ID exacto del turno en el mensaje de cancelación."
+            )
+        else:
+            contexto_parts.append("TURNOS DEL PACIENTE: No tiene turnos futuros confirmados.")
+
     contexto_parts.append(
         "INSTRUCCION REGISTRO: Cuando confirmes el turno inclui 'te agende' y "
         "la fecha en formato DD/MM y la hora en formato HH:MM."
@@ -427,11 +457,6 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         contexto_paciente, paciente_id_actual = await construir_contexto_paciente(mensaje, historial, telefono)
         if contexto_paciente:
             system_prompt += contexto_paciente
-
-        # Turnos futuros del paciente
-        if paciente_id_actual:
-            contexto_turnos = await construir_contexto_turnos(paciente_id_actual)
-            system_prompt += contexto_turnos
 
         # Contexto de disponibilidad y obras sociales
         contexto_real = await construir_contexto_supabase(mensaje, historial)
