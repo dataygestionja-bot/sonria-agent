@@ -515,6 +515,13 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                 if cancelacion:
                     resultado = await cancelar_turno(cancelacion["turno_id"])
                     logger.warning(f"[DIAG] Turno cancelado: {cancelacion['turno_id']} → {resultado}")
+                    # Limpiar el UUID del mensaje antes de enviarlo al paciente
+                    respuesta = re.sub(
+                        r'\s*\[id:?\s*[0-9a-f\-]{36}\]',
+                        '',
+                        respuesta,
+                        flags=re.IGNORECASE
+                    ).strip()
             except Exception as e:
                 logger.error(f"Error cancelando turno: {e}")
 
