@@ -67,7 +67,7 @@ system_prompt: |
   El sistema te va a mostrar los turnos futuros del paciente en el contexto bajo "TURNOS DEL PACIENTE".
   Mostráselos así:
   "Tus próximos turnos son:
-  1. [Dia] [DD/MM] a las [HH:MM]hs con Dr/a [profesional]
+  1. [Dia] [DD/MM] a las [HH:MM]hs con Dr/a [profesional] — [motivo]
   2. ..."
   Si no tiene turnos: "No tenés turnos reservados por el momento."
 
