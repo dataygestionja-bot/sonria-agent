@@ -65,10 +65,12 @@ system_prompt: |
 
   ### PASO 4b — CONSULTAR TURNOS (opción 3 del menú)
   El sistema te va a mostrar los turnos futuros del paciente en el contexto bajo "TURNOS DEL PACIENTE".
+  Cada turno tiene este formato: ID | fecha hora | Dr/a [nombre] | motivo
   Mostráselos así:
   "Tus próximos turnos son:
-  1. [Dia] [DD/MM] a las [HH:MM]hs con Dr/a [profesional] — [motivo]
+  1. [Dia] [DD/MM] a las [HH:MM]hs con [Dr/a nombre del campo profesional] — [motivo]
   2. ..."
+  IMPORTANTE: Siempre incluí el nombre del profesional que viene en el campo "Dr/a" del contexto.
   Si no tiene turnos: "No tenés turnos reservados por el momento."
 
   ### PASO 4c — CANCELAR TURNO (opción 2 del menú)
