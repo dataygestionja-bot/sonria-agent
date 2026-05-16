@@ -310,7 +310,7 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
         if slots:
             resultados.append({
                 "fecha": fecha_str,
-                "dia_nombre": DIAS_SEMANA[fecha.weekday()],
+                "dia_nombre": DIAS_SEMANA[fecha.isoweekday() - 1],
                 "slots": slots[:6]
             })
 
