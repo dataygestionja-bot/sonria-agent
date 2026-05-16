@@ -349,7 +349,7 @@ def detectar_cancelacion_turno(respuesta: str) -> dict | None:
     if "cancelé" not in texto:
         return None
     match = re.search(
-        r'\[id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]',
+        r'\[id:?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]',
         texto
     )
     if not match:
