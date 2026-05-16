@@ -443,8 +443,9 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
                 for t in turnos
             ]
             contexto_parts.append(
-                "TURNOS DEL PACIENTE:\n" + "\n".join(lineas) +
-                "\nUsá el ID exacto del turno en el mensaje de cancelación."
+                "TURNOS DEL PACIENTE (usar IDs internamente, NO mostrarlos al paciente):\n" +
+                "\n".join(lineas) +
+                "\nCuando canceles un turno, incluí el ID así al FINAL del mensaje, sin línea nueva previa: [ID:uuid]"
             )
         else:
             contexto_parts.append("TURNOS DEL PACIENTE: No tiene turnos futuros confirmados.")
