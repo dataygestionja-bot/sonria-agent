@@ -199,10 +199,24 @@ def extraer_datos_confirmacion(
         "sancor salud": "Sancor Salud",
     }
     obra_social = None
-    for clave, nombre_normalizado in OBRAS_MAP.items():
-        if clave in texto_conv.lower():
-            obra_social = nombre_normalizado
-            break
+    ultimo_asistente = next(
+        (m.get("content", "") for m in reversed(historial) if m.get("role") == "assistant"),
+        ""
+    )
+    if "OSDE" in ultimo_asistente and "Particular" in ultimo_asistente:
+        OBRAS_NUM = {"1": "OSDE", "2": "OSECAC", "3": "OSPE", "4": "Swiss Medical", "5": "Galeno", "6": "Sancor Salud"}
+        for msg in reversed(historial):
+            if msg.get("role") == "user":
+                num = msg.get("content", "").strip()
+                if num in OBRAS_NUM:
+                    obra_social = OBRAS_NUM[num]
+                    break
+
+    if not obra_social:
+        for clave, nombre_normalizado in OBRAS_MAP.items():
+            if clave in texto_conv.lower():
+                obra_social = nombre_normalizado
+                break
 
     motivo = "Consulta odontologica"
     for msg in historial:
