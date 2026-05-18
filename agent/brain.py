@@ -162,22 +162,38 @@ def extraer_datos_confirmacion(
     # Nombre y apellido — buscar en historial
     nombre = ""
     apellido = ""
-    for msg in historial:
-        if msg.get("role") == "user":
-            contenido = msg.get("content", "").strip()
-            partes = contenido.split()
-            contenido_lower = contenido.lower()
-            if 1 <= len(partes) <= 4 and not any(
-                p in contenido_lower for p in [
-                    "turno", "quiero", "hola", "necesito",
-                    "galeno", "osde", "swiss", "sancor", "ospe", "osecac",
-                    "ortodoncia", "cirugia", "limpieza", "caries"
-                ]
-            ) and not re.search(r'\b(si|sí|no)\b', contenido_lower) \
-              and not extraer_dni(contenido) and not contenido.strip().isdigit():
-                nombre = partes[0]
-                apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
+    # Primero: respuesta directa a la pregunta de nombre/apellido de Claude
+    for i, msg in enumerate(historial):
+        if msg.get("role") == "assistant":
+            contenido_asistente = msg.get("content", "").lower()
+            if "nombre y apellido" in contenido_asistente or "me decís tu nombre" in contenido_asistente or "me decis tu nombre" in contenido_asistente:
+                for j in range(i + 1, len(historial)):
+                    if historial[j].get("role") == "user":
+                        respuesta_nombre = historial[j].get("content", "").strip()
+                        partes_n = respuesta_nombre.split()
+                        if 1 <= len(partes_n) <= 4 and not extraer_dni(respuesta_nombre) and not respuesta_nombre.isdigit():
+                            nombre = partes_n[0].capitalize()
+                            apellido = " ".join(p.capitalize() for p in partes_n[1:]) if len(partes_n) > 1 else ""
+                        break
                 break
+    # Fallback: heurística genérica
+    if not nombre:
+        for msg in historial:
+            if msg.get("role") == "user":
+                contenido = msg.get("content", "").strip()
+                partes = contenido.split()
+                contenido_lower = contenido.lower()
+                if 1 <= len(partes) <= 4 and not any(
+                    p in contenido_lower for p in [
+                        "turno", "quiero", "hola", "necesito",
+                        "galeno", "osde", "swiss", "sancor", "ospe", "osecac",
+                        "ortodoncia", "cirugia", "limpieza", "caries"
+                    ]
+                ) and not re.search(r'\b(si|sí|no)\b', contenido_lower) \
+                  and not extraer_dni(contenido) and not contenido.strip().isdigit():
+                    nombre = partes[0]
+                    apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
+                    break
 
     # Nombre desde contexto del paciente registrado (buscar en respuestas del asistente)
     if not nombre:
@@ -201,17 +217,20 @@ def extraer_datos_confirmacion(
         "sancor salud": "Sancor Salud",
     }
     obra_social = None
-    ultimo_asistente = next(
-        (m.get("content", "") for m in reversed(historial) if m.get("role") == "assistant"),
-        ""
-    )
-    if "OSDE" in ultimo_asistente and "Particular" in ultimo_asistente:
-        OBRAS_NUM = {"1": "OSDE", "2": "OSECAC", "3": "OSPE", "4": "Swiss Medical", "5": "Galeno", "6": "Sancor Salud"}
-        for msg in reversed(historial):
-            if msg.get("role") == "user":
-                num = msg.get("content", "").strip()
-                if num in OBRAS_NUM:
-                    obra_social = OBRAS_NUM[num]
+    OBRAS_NUM = {"1": "OSDE", "2": "OSECAC", "3": "OSPE", "4": "Swiss Medical", "5": "Galeno", "6": "Sancor Salud", "7": "Particular"}
+    # Buscar el mensaje de menú de obra social y la respuesta inmediata del paciente
+    for i, msg in enumerate(historial):
+        if msg.get("role") == "assistant":
+            contenido_menu = msg.get("content", "")
+            if "OSDE" in contenido_menu and "Particular" in contenido_menu and "Sancor" in contenido_menu:
+                # Es el menú de obra social — buscar la siguiente respuesta del usuario
+                for j in range(i + 1, len(historial)):
+                    if historial[j].get("role") == "user":
+                        num = historial[j].get("content", "").strip()
+                        if num in OBRAS_NUM:
+                            obra_social = OBRAS_NUM[num]
+                        break
+                if obra_social:
                     break
 
     if not obra_social:
