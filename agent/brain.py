@@ -166,13 +166,15 @@ def extraer_datos_confirmacion(
         if msg.get("role") == "user":
             contenido = msg.get("content", "").strip()
             partes = contenido.split()
+            contenido_lower = contenido.lower()
             if 1 <= len(partes) <= 4 and not any(
-                p in contenido.lower() for p in [
-                    "turno", "quiero", "hola", "necesito", "si", "no",
+                p in contenido_lower for p in [
+                    "turno", "quiero", "hola", "necesito",
                     "galeno", "osde", "swiss", "sancor", "ospe", "osecac",
                     "ortodoncia", "cirugia", "limpieza", "caries"
                 ]
-            ) and not extraer_dni(contenido) and not contenido.strip().isdigit():
+            ) and not re.search(r'\b(si|sí|no)\b', contenido_lower) \
+              and not extraer_dni(contenido) and not contenido.strip().isdigit():
                 nombre = partes[0]
                 apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
                 break
@@ -231,7 +233,7 @@ def extraer_datos_confirmacion(
         "fecha": fecha,
         "hora_inicio": hora,
         "duracion_min": DURACION_SLOTS.get(profesional_id, 30),
-        "nombre": nombre or "Paciente",
+        "nombre": nombre or "",
         "apellido": apellido,
         "telefono": telefono,
         "motivo": motivo,
