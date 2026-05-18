@@ -9,13 +9,16 @@ Funciona con cualquier proveedor (Meta, Twilio) gracias a la capa de providers.
 import os
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
+from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, obtener_ultimo_timestamp, limpiar_historial
 from agent.providers import obtener_proveedor
+
+SESSION_TIMEOUT_HORAS = 6
 
 load_dotenv()
 
@@ -78,6 +81,17 @@ async def webhook_handler(request: Request):
                 continue
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
+
+            # Verificar timeout de inactividad (6 horas)
+            ultimo_ts = await obtener_ultimo_timestamp(msg.telefono)
+            if ultimo_ts is not None:
+                inactividad = datetime.utcnow() - ultimo_ts
+                if inactividad > timedelta(hours=SESSION_TIMEOUT_HORAS):
+                    logger.warning(
+                        f"[SESSION] Timeout para {msg.telefono} — "
+                        f"inactividad: {inactividad}. Limpiando historial."
+                    )
+                    await limpiar_historial(msg.telefono)
 
             # Obtener historial ANTES de guardar el mensaje actual
             # (brain.py agrega el mensaje actual, evitando duplicados)
