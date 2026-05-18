@@ -116,7 +116,20 @@ def extraer_datos_confirmacion(
         + " " + respuesta
     )
 
-    profesional_id = detectar_profesional(texto_conv)
+    # Buscar profesional en la respuesta de confirmación primero (más confiable:
+    # Claude siempre nombra al profesional en el mensaje de confirmación del turno)
+    profesional_id = detectar_profesional(respuesta)
+    if not profesional_id:
+        # Fallback: buscar en mensajes recientes del usuario (selección explícita)
+        for msg in reversed(historial[-8:]):
+            if msg.get("role") == "user":
+                pid = detectar_profesional(msg.get("content", "").lower())
+                if pid:
+                    profesional_id = pid
+                    break
+    if not profesional_id:
+        # Último recurso: conversación completa
+        profesional_id = detectar_profesional(texto_conv)
     if not profesional_id:
         logger.warning("[DIAG] No se detecto profesional")
         return None
@@ -400,12 +413,38 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
         texto_completo += " " + msg.get("content", "").lower()
 
     profesional_id = detectar_profesional(mensaje.lower())
-    if not profesional_id:
+
+    # Selección por número: el usuario respondió "2" al listado de profesionales
+    if not profesional_id and mensaje.strip().isdigit():
+        num = mensaje.strip()
         for msg in reversed(historial[-4:]):
             if msg.get("role") == "assistant":
+                contenido = msg.get("content", "")
+                match = re.search(rf'^{re.escape(num)}\.\s+(.+)', contenido, re.MULTILINE)
+                if match:
+                    pid = detectar_profesional(match.group(1).lower())
+                    if pid:
+                        profesional_id = pid
+                break
+
+    if not profesional_id:
+        # Buscar en mensajes del usuario (selección por nombre)
+        for msg in reversed(historial[-8:]):
+            if msg.get("role") == "user":
                 pid = detectar_profesional(msg.get("content", "").lower())
                 if pid:
                     profesional_id = pid
+                    break
+
+    if not profesional_id:
+        # Último recurso: mensajes del asistente que mencionan UN SOLO profesional
+        for msg in reversed(historial[-6:]):
+            if msg.get("role") == "assistant":
+                contenido = msg.get("content", "").lower()
+                encontrados = [pid for nombre, pid in PROFESIONALES.items()
+                               if nombre.split()[-1] in contenido]
+                if len(encontrados) == 1:
+                    profesional_id = encontrados[0]
                     break
     especialidad = detectar_especialidad(texto_completo)
     palabras_disponibilidad = [

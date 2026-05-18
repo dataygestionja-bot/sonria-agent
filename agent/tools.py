@@ -25,6 +25,14 @@ DIAS_SEMANA = {
     4: "Viernes", 5: "Sabado", 6: "Domingo",
 }
 
+# Nombres canónicos por UUID (evita problemas si la DB tiene nombre/apellido invertidos)
+NOMBRES_CANONICOS = {
+    "b5af188f-aa9e-4983-8365-92930cbc9eeb": "Bruno Ordoñez",
+    "9cd6412e-e1e9-4b20-aa78-a9ba03ea240d": "Federico Cabrera",
+    "318bdbf8-04dc-4953-b284-d3c5f429cbbf": "Florencia Celsi",
+    "3b90bf47-16be-4116-b348-fd1bf2b9ef8c": "Fernando Rojas",
+}
+
 
 def cargar_info_negocio() -> dict:
     try:
@@ -236,7 +244,14 @@ async def obtener_profesionales_por_especialidad(especialidad: str) -> list[dict
         "activo": "eq.true",
         "select": "id,nombre,apellido,especialidad"
     })
-    return [p for p in todos if especialidad.lower() in p.get("especialidad", "").lower()]
+    resultado = [p for p in todos if especialidad.lower() in p.get("especialidad", "").lower()]
+    # Normalizar nombre canónico si la DB lo tiene invertido
+    for p in resultado:
+        if p["id"] in NOMBRES_CANONICOS:
+            partes = NOMBRES_CANONICOS[p["id"]].split(maxsplit=1)
+            p["nombre"] = partes[0]
+            p["apellido"] = partes[1] if len(partes) > 1 else ""
+    return resultado
 
 
 async def obtener_horarios_profesional(profesional_id: str) -> list[dict]:
@@ -347,13 +362,10 @@ async def obtener_turnos_paciente(paciente_id: str) -> list[dict]:
         "order": "fecha.asc"
     })
     for t in turnos:
-        if t.get("profesional_id"):
-            profs = await supabase_get("profesionales", {
-                "id": f"eq.{t['profesional_id']}",
-                "select": "nombre,apellido"
-            })
-            if profs:
-                t["profesional"] = f"{profs[0]['nombre']} {profs[0]['apellido']}"
+        prof_id = t.get("profesional_id")
+        if prof_id:
+            # Usar nombre canónico hardcodeado si está disponible (evita orden invertido en DB)
+            t["profesional"] = NOMBRES_CANONICOS.get(prof_id, prof_id)
     return turnos
 
 
