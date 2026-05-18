@@ -91,6 +91,11 @@ async def webhook_handler(request: Request):
                         f"[SESSION] Timeout para {msg.telefono} — "
                         f"inactividad: {inactividad}. Limpiando historial."
                     )
+                    mensaje_expiracion = (
+                        "¡Hola! Tu sesión anterior expiró 😊 No hay problema, "
+                        "estamos acá para ayudarte. ¿Me contás tu DNI para empezar?"
+                    )
+                    await proveedor.enviar_mensaje(msg.telefono, mensaje_expiracion)
                     await limpiar_historial(msg.telefono)
 
             # Obtener historial ANTES de guardar el mensaje actual
