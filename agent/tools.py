@@ -308,6 +308,7 @@ async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list
 async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar: int = 14) -> list[dict]:
     horarios = await obtener_horarios_profesional(profesional_id)
     dias_con_horario = {h["dia_semana"] for h in horarios}
+    logger.warning(f"[DIAG] disponibilidad prof={profesional_id} dias_horario={dias_con_horario}")
 
     resultados = []
     hoy = date.today()
@@ -321,6 +322,7 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
 
         fecha_str = fecha.strftime("%Y-%m-%d")
         slots = await obtener_slots_disponibles(profesional_id, fecha_str)
+        logger.warning(f"[DIAG] {fecha_str} dia_iso={dia_iso} slots={slots}")
 
         if slots:
             resultados.append({
@@ -331,6 +333,8 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
 
         if len(resultados) >= 3:
             break
+
+    logger.warning(f"[DIAG] disponibilidad resultado={resultados}")
 
     return resultados
 
