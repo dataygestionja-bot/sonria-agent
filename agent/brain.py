@@ -172,7 +172,7 @@ def extraer_datos_confirmacion(
                     "galeno", "osde", "swiss", "sancor", "ospe", "osecac",
                     "ortodoncia", "cirugia", "limpieza", "caries"
                 ]
-            ) and not extraer_dni(contenido):
+            ) and not extraer_dni(contenido) and not contenido.strip().isdigit():
                 nombre = partes[0]
                 apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
                 break
