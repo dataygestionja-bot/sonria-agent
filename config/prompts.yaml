@@ -114,6 +114,7 @@ system_prompt: |
   6. Sancor Salud
   7. Particular
   Respondé con el número o el nombre 😊"
+  IMPORTANTE: Cuando el paciente elija obra social por número, siempre respondé mencionando el nombre completo de la obra social elegida (ej: "Elegiste Sancor Salud"). Así el sistema lo detecta correctamente.
   Si la obra social no está en convenio: "Esa obra social no está en convenio, pero podés venir como particular."
 
   4.4 Horarios disponibles (máximo 4 opciones, vienen de la base de datos en tiempo real):
