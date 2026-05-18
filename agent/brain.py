@@ -12,6 +12,7 @@ from agent.tools import (
     registrar_turno_supabase,
     buscar_paciente_por_dni,
     buscar_paciente_por_telefono,
+    crear_paciente,
     obtener_turnos_paciente,
     cancelar_turno,
 )
@@ -377,6 +378,98 @@ def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_
     return {"paciente_id": paciente_id, "datos": datos_actualizar}
 
 
+def _es_solicitud_nombre(msg_asistente: str) -> bool:
+    """Retorna True si el mensaje del asistente está pidiendo nombre y apellido."""
+    lower = msg_asistente.lower()
+    return (
+        "nombre y apellido" in lower
+        or "me decís tu nombre" in lower
+        or "me decis tu nombre" in lower
+        or "decime tu nombre" in lower
+    )
+
+
+def _extraer_nombre_apellido(texto: str) -> tuple[str, str] | None:
+    """
+    Intenta extraer nombre y apellido de un texto corto.
+    Retorna (nombre, apellido) o None si no parece un nombre.
+    """
+    partes = texto.strip().split()
+    if not (1 <= len(partes) <= 4):
+        return None
+    if extraer_dni(texto) or texto.strip().isdigit():
+        return None
+    texto_lower = texto.lower()
+    # Descartar frases que no son nombres
+    palabras_no_nombre = [
+        "turno", "quiero", "hola", "necesito", "gracias", "si", "no",
+        "galeno", "osde", "swiss", "sancor", "ospe", "osecac",
+        "ortodoncia", "cirugia", "limpieza", "caries", "particular",
+        "cancelar", "reprogramar", "consultar",
+    ]
+    if any(p in texto_lower for p in palabras_no_nombre):
+        return None
+    nombre = partes[0].capitalize()
+    apellido = " ".join(p.capitalize() for p in partes[1:]) if len(partes) > 1 else ""
+    return nombre, apellido
+
+
+async def registrar_paciente_si_es_nombre(
+    mensaje: str,
+    historial: list[dict],
+    telefono: str,
+    paciente_id_actual: str | None,
+) -> str | None:
+    """
+    Registra inmediatamente al paciente en la DB cuando detecta que:
+      - El paciente no está registrado aún (paciente_id_actual is None)
+      - Hay un DNI en el historial que fue buscado y no encontrado
+      - El último mensaje del asistente pedía nombre y apellido
+      - El mensaje actual parece ser la respuesta con el nombre
+
+    Retorna el nuevo paciente_id si lo creó, o None si no aplica.
+    """
+    if paciente_id_actual:
+        return None  # Ya existe, nada que hacer
+
+    # Verificar que el asistente anterior pidió el nombre
+    ultimo_asistente = ""
+    for msg in reversed(historial):
+        if msg.get("role") == "assistant":
+            ultimo_asistente = msg.get("content", "")
+            break
+    if not _es_solicitud_nombre(ultimo_asistente):
+        return None
+
+    # Obtener DNI del historial
+    dni = None
+    for msg in historial:
+        if msg.get("role") == "user":
+            dni = extraer_dni(msg.get("content", ""))
+            if dni:
+                break
+    if not dni:
+        return None
+
+    # Verificar que el DNI efectivamente no está en BD (no crear duplicados)
+    existente = await buscar_paciente_por_dni(dni)
+    if existente:
+        return existente.get("id")
+
+    # Parsear nombre del mensaje actual
+    resultado = _extraer_nombre_apellido(mensaje)
+    if not resultado:
+        return None
+    nombre, apellido = resultado
+
+    # Crear paciente con los datos disponibles hasta ahora
+    nuevo = await crear_paciente(nombre, apellido, dni, telefono)
+    nuevo_id = nuevo.get("id")
+    if nuevo_id:
+        logger.warning(f"[REGISTRO TEMPRANO] Paciente creado: id={nuevo_id} nombre={nombre} apellido={apellido} dni={dni}")
+    return nuevo_id
+
+
 async def construir_contexto_paciente(mensaje: str, historial: list[dict], telefono: str) -> tuple[str, str | None]:
     contexto = ""
     paciente_id = None
@@ -563,6 +656,18 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         contexto_paciente, paciente_id_actual = await construir_contexto_paciente(mensaje, historial, telefono)
         if contexto_paciente:
             system_prompt += contexto_paciente
+
+        # Registro temprano: si el mensaje actual es el nombre/apellido de un paciente
+        # nuevo, lo insertamos en DB AHORA antes de continuar el flujo
+        if telefono and not paciente_id_actual:
+            try:
+                nuevo_id = await registrar_paciente_si_es_nombre(
+                    mensaje, historial, telefono, paciente_id_actual
+                )
+                if nuevo_id:
+                    paciente_id_actual = nuevo_id
+            except Exception as e:
+                logger.error(f"Error en registro temprano de paciente: {e}")
 
         # Contexto de disponibilidad y obras sociales
         contexto_real = await construir_contexto_supabase(mensaje, historial)
