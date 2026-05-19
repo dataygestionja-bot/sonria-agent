@@ -11,7 +11,7 @@ from typing import Optional
 logger = logging.getLogger("agentkit")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://wgzbbylwawelmxzrgdiw.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable__ziih2RNWyYaldF_Lx1uYg_aLHW70DC")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnemJieWx3YXdlbG14enJnZGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMjg1NDgsImV4cCI6MjA5NDcwNDU0OH0.GJ-KV1NW8ckmwkfbo-HA347NJjfJ0f3AM34rh8exZpc")
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
