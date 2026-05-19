@@ -10,9 +10,8 @@ from typing import Optional
 
 logger = logging.getLogger("agentkit")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qqkxxquqdxyiqalhccmo.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxa3h4cXVxZHh5aXFhbGhjY21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzODI4OTIsImV4cCI6MjA5MTk1ODg5Mn0.R6Lkyf3SRchy1Tl7w05msRYAsvvGlf5ELJohUeUi_E8")
-
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://wgzbbylwawelmxzrgdiw.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable__ziih2RNWyYaldF_Lx1uYg_aLHW70DC")
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
