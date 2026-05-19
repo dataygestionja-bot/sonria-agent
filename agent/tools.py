@@ -312,7 +312,7 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
     resultados = []
     hoy = date.today()
 
-    for i in range(1, dias_a_buscar + 1):
+    for i in range(0, dias_a_buscar + 1):
         fecha = hoy + timedelta(days=i)
         dia_iso = fecha.isoweekday()
 
