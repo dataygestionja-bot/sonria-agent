@@ -485,6 +485,43 @@ async def obtener_proximo_turno_por_telefono(telefono: str) -> dict | None:
     return t
 
 
+async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
+    """
+    Igual que obtener_proximo_turno_por_telefono pero retorna TODOS
+    los turnos confirmados futuros (hasta 10), ordenados por fecha/hora.
+    """
+    hoy = date.today().strftime("%Y-%m-%d")
+    telefono_limpio = telefono.replace("+", "").replace(" ", "")
+    sufijo = telefono_limpio[-10:]
+
+    turnos = await supabase_get("turnos", {
+        "telefono_solicitante": f"ilike.*{sufijo}*",
+        "fecha": f"gte.{hoy}",
+        "estado": "eq.confirmado",
+        "select": "id,fecha,hora_inicio,profesional_id",
+        "order": "fecha.asc,hora_inicio.asc",
+        "limit": "10",
+    })
+
+    if not turnos:
+        paciente = await buscar_paciente_por_telefono(telefono)
+        if paciente:
+            turnos = await supabase_get("turnos", {
+                "paciente_id": f"eq.{paciente['id']}",
+                "fecha": f"gte.{hoy}",
+                "estado": "eq.confirmado",
+                "select": "id,fecha,hora_inicio,profesional_id",
+                "order": "fecha.asc,hora_inicio.asc",
+                "limit": "10",
+            })
+
+    for t in turnos:
+        prof_id = t.get("profesional_id")
+        t["profesional"] = NOMBRES_CANONICOS.get(prof_id, "") if prof_id else ""
+
+    return turnos
+
+
 async def listar_obras_sociales() -> dict:
     resultados = await supabase_get("obras_sociales", {
         "activo": "eq.true",
