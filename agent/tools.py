@@ -273,6 +273,47 @@ async def obtener_turnos_ocupados(profesional_id: str, fecha: str) -> list:
     return [(t["hora_inicio"], t["hora_fin"]) for t in turnos]
 
 
+async def obtener_bloqueos_fecha(profesional_id: str, fecha_str: str) -> list[dict]:
+    """
+    Retorna los bloqueos activos del profesional que cubren fecha_str.
+    Un bloqueo cubre la fecha si: fecha_desde <= fecha_str <= fecha_hasta.
+    """
+    bloqueos = await supabase_get("bloqueos_agenda", {
+        "profesional_id": f"eq.{profesional_id}",
+        "estado": "eq.activo",
+        "fecha_desde": f"lte.{fecha_str}",
+        "fecha_hasta": f"gte.{fecha_str}",
+        "select": "todo_el_dia,hora_desde,hora_hasta,motivo",
+    })
+    return bloqueos
+
+
+def _slot_bloqueado(slot_str: str, duracion_min: int, bloqueos: list[dict]) -> bool:
+    """
+    Retorna True si el slot debe ser excluido por algún bloqueo.
+
+    - todo_el_dia=True  → bloquea siempre
+    - todo_el_dia=False → bloquea solo si el slot se superpone con
+                          [hora_desde, hora_hasta) del bloqueo
+    """
+    slot_ini = datetime.strptime(slot_str, "%H:%M")
+    slot_fin = slot_ini + timedelta(minutes=duracion_min)
+
+    for b in bloqueos:
+        if b.get("todo_el_dia"):
+            return True
+        # Bloqueo parcial: verificar solapamiento
+        h_desde = b.get("hora_desde")
+        h_hasta = b.get("hora_hasta")
+        if h_desde and h_hasta:
+            blq_ini = datetime.strptime(str(h_desde)[:5], "%H:%M")
+            blq_fin = datetime.strptime(str(h_hasta)[:5], "%H:%M")
+            # Hay solapamiento si slot_ini < blq_fin AND slot_fin > blq_ini
+            if slot_ini < blq_fin and slot_fin > blq_ini:
+                return True
+    return False
+
+
 async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list[str]:
     try:
         fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
@@ -286,18 +327,27 @@ async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list
     if not horario_dia:
         return []
 
+    # Verificar bloqueos de agenda para esta fecha
+    bloqueos = await obtener_bloqueos_fecha(profesional_id, fecha_str)
+
+    # Si hay algún bloqueo de todo el día, la fecha entera no está disponible
+    if any(b.get("todo_el_dia") for b in bloqueos):
+        logger.info(f"Fecha {fecha_str} bloqueada (todo el día) para prof {profesional_id}")
+        return []
+
     ocupados = await obtener_turnos_ocupados(profesional_id, fecha_str)
     ocupados_inicio = {t[0][:5] for t in ocupados}
 
     inicio = datetime.strptime(horario_dia["hora_inicio"][:5], "%H:%M")
     fin = datetime.strptime(horario_dia["hora_fin"][:5], "%H:%M")
-    duracion = timedelta(minutes=horario_dia["duracion_slot_min"])
+    duracion_min = horario_dia["duracion_slot_min"]
+    duracion = timedelta(minutes=duracion_min)
 
     slots = []
     actual = inicio
     while actual + duracion <= fin:
         slot_str = actual.strftime("%H:%M")
-        if slot_str not in ocupados_inicio:
+        if slot_str not in ocupados_inicio and not _slot_bloqueado(slot_str, duracion_min, bloqueos):
             slots.append(slot_str)
         actual += duracion
 
