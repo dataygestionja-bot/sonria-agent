@@ -7,6 +7,7 @@ Funciona con cualquier proveedor (Meta, Twilio) gracias a la capa de providers.
 """
 
 import os
+import sys
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -23,9 +24,15 @@ SESSION_TIMEOUT_HORAS = 6
 load_dotenv()
 
 # Configuración de logging según entorno
+# stream=sys.stdout es necesario para Railway: todo lo que va a stderr
+# se clasifica como "error" independientemente del nivel del log.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 log_level = logging.DEBUG if ENVIRONMENT == "development" else logging.INFO
-logging.basicConfig(level=log_level)
+logging.basicConfig(
+    level=log_level,
+    stream=sys.stdout,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("agentkit")
 
 # Proveedor de WhatsApp (se configura en .env con WHATSAPP_PROVIDER)
