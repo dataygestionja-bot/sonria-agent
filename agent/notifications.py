@@ -98,11 +98,16 @@ async def revisar_recordatorios(proveedor) -> None:
         fecha=str(manana),
         campo_enviado="recordatorio_24h_enviado",
     )
+    logger.info(f"[SCHEDULER-DIAG] 24h: {len(turnos_24h)} turno(s) candidato(s) para mañana {manana}")
     for t in turnos_24h:
         dt_turno = _combinar_fecha_hora(t.get("fecha", ""), t.get("hora_inicio", ""))
         if dt_turno is None:
+            logger.warning(f"[SCHEDULER-DIAG] 24h: Turno {t.get('id')} — fecha/hora inválida, omitido")
             continue
         diff_h = (dt_turno - ahora).total_seconds() / 3600
+        logger.info(f"[SCHEDULER-DIAG] 24h: Turno {t.get('id')} "
+                    f"hora={t.get('hora_inicio')} tel={t.get('telefono')!r} "
+                    f"diff_h={diff_h:.2f} — {'ENVIAR' if 23 <= diff_h <= 25 else 'fuera de ventana'}")
         if 23 <= diff_h <= 25:
             await _enviar_recordatorio(proveedor, t, "24h")
 
@@ -111,10 +116,15 @@ async def revisar_recordatorios(proveedor) -> None:
         fecha=str(hoy),
         campo_enviado="recordatorio_2h_enviado",
     )
+    logger.info(f"[SCHEDULER-DIAG] 2h: {len(turnos_2h)} turno(s) candidato(s) para hoy {hoy}")
     for t in turnos_2h:
         dt_turno = _combinar_fecha_hora(t.get("fecha", ""), t.get("hora_inicio", ""))
         if dt_turno is None:
+            logger.warning(f"[SCHEDULER-DIAG] 2h: Turno {t.get('id')} — fecha/hora inválida, omitido")
             continue
         diff_h = (dt_turno - ahora).total_seconds() / 3600
+        logger.info(f"[SCHEDULER-DIAG] 2h: Turno {t.get('id')} "
+                    f"hora={t.get('hora_inicio')} tel={t.get('telefono')!r} "
+                    f"diff_h={diff_h:.2f} — {'ENVIAR' if 1.5 <= diff_h <= 2.5 else 'fuera de ventana'}")
         if 1.5 <= diff_h <= 2.5:
             await _enviar_recordatorio(proveedor, t, "2h")

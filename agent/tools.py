@@ -409,21 +409,43 @@ async def obtener_turnos_pendientes_recordatorio(
         "order": "hora_inicio.asc",
     })
 
-    for t in turnos:
-        # Teléfono: usar el del solicitante o buscar en la ficha del paciente
-        telefono = t.get("telefono_solicitante", "") or ""
-        nombre = t.get("nombre_solicitante", "") or ""
+    logger.info(f"[SCHEDULER-DIAG] obtener_turnos_pendientes_recordatorio "
+                f"fecha={fecha} campo={campo_enviado} → {len(turnos)} turno(s) encontrado(s): "
+                + str([{"id": t.get("id"), "hora": t.get("hora_inicio"),
+                        "tel_sol": t.get("telefono_solicitante"),
+                        "pac_id": t.get("paciente_id")} for t in turnos]))
 
-        if (not telefono or not nombre) and t.get("paciente_id"):
-            pacientes = await supabase_get("pacientes", {
-                "id": f"eq.{t['paciente_id']}",
-                "select": "nombre,telefono",
-            })
-            if pacientes:
-                if not nombre:
-                    nombre = pacientes[0].get("nombre", "")
-                if not telefono:
-                    telefono = pacientes[0].get("telefono", "")
+    for t in turnos:
+        turno_id = t.get("id")
+        # Teléfono: usar el del solicitante; si es null, buscar en pacientes
+        telefono = t.get("telefono_solicitante") or ""
+        nombre = t.get("nombre_solicitante") or ""
+
+        if not telefono or not nombre:
+            pac_id = t.get("paciente_id")
+            if pac_id:
+                pacientes = await supabase_get("pacientes", {
+                    "id": f"eq.{pac_id}",
+                    "select": "nombre,apellido,telefono",
+                })
+                if pacientes:
+                    p = pacientes[0]
+                    if not nombre:
+                        nombre = f"{p.get('nombre', '')} {p.get('apellido', '')}".strip()
+                    if not telefono:
+                        telefono = p.get("telefono", "") or ""
+                    logger.info(f"[SCHEDULER-DIAG] Turno {turno_id}: "
+                                f"telefono_solicitante=null → fallback paciente {pac_id} "
+                                f"→ telefono={telefono!r} nombre={nombre!r}")
+                else:
+                    logger.warning(f"[SCHEDULER-DIAG] Turno {turno_id}: "
+                                   f"paciente_id={pac_id} no encontrado en pacientes")
+            else:
+                logger.warning(f"[SCHEDULER-DIAG] Turno {turno_id}: "
+                               f"sin telefono_solicitante y sin paciente_id — omitido")
+        else:
+            logger.info(f"[SCHEDULER-DIAG] Turno {turno_id}: "
+                        f"telefono_solicitante={telefono!r} nombre={nombre!r}")
 
         t["nombre_paciente"] = nombre.strip()
         t["telefono"] = telefono.strip()
