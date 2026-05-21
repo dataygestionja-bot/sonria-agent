@@ -389,25 +389,68 @@ def _es_solicitud_nombre(msg_asistente: str) -> bool:
     )
 
 
+# Palabras que el paciente puede escribir en lugar de su nombre
+_PALABRAS_INVALIDAS_NOMBRE = {
+    "chau", "hola", "si", "sí", "no", "ok", "gracias", "buenas",
+    "bye", "adios", "adiós", "nada", "dale", "listo", "perfecto",
+    "claro", "bueno", "bien", "mal", "quizas", "quizás", "depende",
+    "entendido", "ninguno", "ninguna",
+}
+
+
+def _es_nombre_valido(texto: str) -> bool:
+    """
+    Retorna True si el texto puede ser un nombre de persona.
+    Retorna False (→ pedir de nuevo) si:
+      - Menos de 3 caracteres
+      - Solo dígitos o es un DNI
+      - El texto completo (o todas sus palabras) está en la lista negra
+      - No contiene ninguna vocal
+    """
+    strip = texto.strip()
+    lower = strip.lower()
+
+    if len(strip) < 3:
+        return False
+
+    if strip.isdigit() or extraer_dni(strip):
+        return False
+
+    # Texto completo en lista negra
+    if lower in _PALABRAS_INVALIDAS_NOMBRE:
+        return False
+
+    # Todas las palabras en lista negra (ej: "hola chau")
+    partes = lower.split()
+    if partes and all(p in _PALABRAS_INVALIDAS_NOMBRE for p in partes):
+        return False
+
+    # Debe tener al menos una vocal
+    if not re.search(r'[aeiouáéíóúüàèìòù]', lower):
+        return False
+
+    return True
+
+
 def _extraer_nombre_apellido(texto: str) -> tuple[str, str] | None:
     """
     Intenta extraer nombre y apellido de un texto corto.
-    Retorna (nombre, apellido) o None si no parece un nombre.
+    Retorna (nombre, apellido) o None si no parece un nombre válido.
     """
     partes = texto.strip().split()
     if not (1 <= len(partes) <= 4):
         return None
-    if extraer_dni(texto) or texto.strip().isdigit():
+    if not _es_nombre_valido(texto):
         return None
+    # Descartar palabras de contexto odontológico
     texto_lower = texto.lower()
-    # Descartar frases que no son nombres
-    palabras_no_nombre = [
-        "turno", "quiero", "hola", "necesito", "gracias", "si", "no",
+    palabras_contexto = [
+        "turno", "quiero", "necesito",
         "galeno", "osde", "swiss", "sancor", "ospe", "osecac",
         "ortodoncia", "cirugia", "limpieza", "caries", "particular",
         "cancelar", "reprogramar", "consultar",
     ]
-    if any(p in texto_lower for p in palabras_no_nombre):
+    if any(p in texto_lower for p in palabras_contexto):
         return None
     nombre = partes[0].capitalize()
     apellido = " ".join(p.capitalize() for p in partes[1:]) if len(partes) > 1 else ""
@@ -660,6 +703,19 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
         # Registro temprano: si el mensaje actual es el nombre/apellido de un paciente
         # nuevo, lo insertamos en DB AHORA antes de continuar el flujo
         if telefono and not paciente_id_actual:
+            # Detectar si el asistente acababa de pedir nombre y el texto no es válido
+            ultimo_asistente = next(
+                (m.get("content", "") for m in reversed(historial) if m.get("role") == "assistant"),
+                ""
+            )
+            if _es_solicitud_nombre(ultimo_asistente) and not _es_nombre_valido(mensaje):
+                logger.warning(f"[NOMBRE] Texto rechazado como nombre inválido: '{mensaje}'")
+                return (
+                    "Ese no parece ser un nombre válido 😊 "
+                    "¿Me decís tu nombre y apellido completo? "
+                    "Por ejemplo: Juan García"
+                )
+
             try:
                 nuevo_id = await registrar_paciente_si_es_nombre(
                     mensaje, historial, telefono, paciente_id_actual
