@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, obtener_ultimo_timestamp, limpiar_historial
 from agent.providers import obtener_proveedor
-from agent.notifications import scheduler, revisar_recordatorios
+# from agent.notifications import scheduler, revisar_recordatorios  # DESACTIVADO TEMPORALMENTE
 
 SESSION_TIMEOUT_HORAS = 6
 
@@ -49,23 +49,22 @@ async def lifespan(app: FastAPI):
     logger.info(f"Servidor AgentKit corriendo en puerto {PORT}")
     logger.info(f"Proveedor de WhatsApp: {proveedor.__class__.__name__}")
 
-    # Scheduler de recordatorios — corre cada 15 minutos
-    scheduler.add_job(
-        revisar_recordatorios,
-        trigger="interval",
-        minutes=15,
-        args=[proveedor],
-        id="recordatorios_turno",
-        replace_existing=True,
-        next_run_time=datetime.now(),  # primera ejecución inmediata al arrancar
-    )
-    scheduler.start()
-    logger.info("Scheduler de recordatorios iniciado (cada 15 min)")
+    # Scheduler de recordatorios — DESACTIVADO TEMPORALMENTE
+    # scheduler.add_job(
+    #     revisar_recordatorios,
+    #     trigger="interval",
+    #     minutes=15,
+    #     args=[proveedor],
+    #     id="recordatorios_turno",
+    #     replace_existing=True,
+    #     next_run_time=datetime.now(),
+    # )
+    # scheduler.start()
+    logger.info("Scheduler de recordatorios DESACTIVADO")
 
     yield
 
-    scheduler.shutdown(wait=False)
-    logger.info("Scheduler detenido")
+    # scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
