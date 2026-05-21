@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, obtener_ultimo_timestamp, limpiar_historial
 from agent.providers import obtener_proveedor
+from agent.notifications import scheduler, revisar_recordatorios
 
 SESSION_TIMEOUT_HORAS = 6
 
@@ -42,12 +43,29 @@ PORT = int(os.getenv("PORT", 8000))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicializa la base de datos al arrancar el servidor."""
+    """Inicializa la base de datos y arranca el scheduler al arrancar el servidor."""
     await inicializar_db()
     logger.info("Base de datos inicializada")
     logger.info(f"Servidor AgentKit corriendo en puerto {PORT}")
     logger.info(f"Proveedor de WhatsApp: {proveedor.__class__.__name__}")
+
+    # Scheduler de recordatorios — corre cada 15 minutos
+    scheduler.add_job(
+        revisar_recordatorios,
+        trigger="interval",
+        minutes=15,
+        args=[proveedor],
+        id="recordatorios_turno",
+        replace_existing=True,
+        next_run_time=datetime.now(),  # primera ejecución inmediata al arrancar
+    )
+    scheduler.start()
+    logger.info("Scheduler de recordatorios iniciado (cada 15 min)")
+
     yield
+
+    scheduler.shutdown(wait=False)
+    logger.info("Scheduler detenido")
 
 
 app = FastAPI(
@@ -72,6 +90,31 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+async def _manejar_cancelo(telefono: str) -> str:
+    """
+    Busca el próximo turno confirmado del paciente y lo cancela.
+    Retorna el mensaje de confirmación o de error.
+    """
+    from agent.tools import obtener_proximo_turno_por_telefono, cancelar_turno
+    turno = await obtener_proximo_turno_por_telefono(telefono)
+    if not turno:
+        return "No encontré ningún turno próximo para cancelar 😊 ¿Hay algo más en que pueda ayudarte?"
+
+    await cancelar_turno(turno["id"])
+
+    try:
+        fecha_fmt = datetime.strptime(turno["fecha"], "%Y-%m-%d").strftime("%d/%m")
+    except ValueError:
+        fecha_fmt = turno["fecha"]
+    hora_fmt = turno.get("hora_inicio", "")[:5]
+
+    logger.info(f"[CANCELO] Turno {turno['id']} cancelado para {telefono}")
+    return (
+        f"Tu turno del {fecha_fmt} a las {hora_fmt} fue cancelado. "
+        f"¡Esperamos verte pronto! 😊"
+    )
+
+
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
@@ -88,6 +131,15 @@ async def webhook_handler(request: Request):
                 continue
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
+
+            # ── Detección de CANCELO (independiente del estado de la conversación) ──
+            if msg.texto.strip().upper() == "CANCELO":
+                respuesta = await _manejar_cancelo(msg.telefono)
+                await proveedor.enviar_mensaje(msg.telefono, respuesta)
+                await guardar_mensaje(msg.telefono, "user", msg.texto)
+                await guardar_mensaje(msg.telefono, "assistant", respuesta)
+                logger.info(f"CANCELO procesado para {msg.telefono}")
+                continue
 
             # Verificar timeout de inactividad (6 horas)
             ultimo_ts = await obtener_ultimo_timestamp(msg.telefono)
