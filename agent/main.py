@@ -90,29 +90,85 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
-async def _manejar_cancelo(telefono: str) -> str:
-    """
-    Busca el próximo turno confirmado del paciente y lo cancela.
-    Retorna el mensaje de confirmación o de error.
-    """
-    from agent.tools import obtener_proximo_turno_por_telefono, cancelar_turno
-    turno = await obtener_proximo_turno_por_telefono(telefono)
-    if not turno:
-        return "No encontré ningún turno próximo para cancelar 😊 ¿Hay algo más en que pueda ayudarte?"
+_DIAS_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
+            4: "Viernes", 5: "Sábado", 6: "Domingo"}
 
+
+def _formatear_turno(turno: dict) -> str:
+    """Retorna string legible: 'Jueves 22/05 a las 10:00 con Bruno Ordoñez'"""
+    try:
+        dt = datetime.strptime(turno["fecha"], "%Y-%m-%d")
+        dia_nombre = _DIAS_ES[dt.weekday()]
+        fecha_fmt = dt.strftime("%d/%m")
+    except (ValueError, KeyError):
+        dia_nombre = ""
+        fecha_fmt = turno.get("fecha", "")
+    hora_fmt = turno.get("hora_inicio", "")[:5]
+    profesional = turno.get("profesional", "")
+    return f"{dia_nombre} {fecha_fmt} a las {hora_fmt} con {profesional}".strip()
+
+
+async def _cancelar_y_confirmar(turno: dict, telefono: str) -> str:
+    """Cancela el turno y retorna el mensaje de confirmación."""
+    from agent.tools import cancelar_turno
     await cancelar_turno(turno["id"])
-
     try:
         fecha_fmt = datetime.strptime(turno["fecha"], "%Y-%m-%d").strftime("%d/%m")
     except ValueError:
-        fecha_fmt = turno["fecha"]
+        fecha_fmt = turno.get("fecha", "")
     hora_fmt = turno.get("hora_inicio", "")[:5]
-
     logger.info(f"[CANCELO] Turno {turno['id']} cancelado para {telefono}")
     return (
         f"Tu turno del {fecha_fmt} a las {hora_fmt} fue cancelado. "
         f"¡Esperamos verte pronto! 😊"
     )
+
+
+async def _manejar_cancelo(telefono: str) -> str:
+    """
+    Si el paciente tiene 1 turno próximo → cancela directo.
+    Si tiene más de 1 → muestra lista y pide que elija.
+    """
+    from agent.tools import obtener_proximos_turnos_por_telefono, cancelar_turno
+    turnos = await obtener_proximos_turnos_por_telefono(telefono)
+
+    if not turnos:
+        return "No encontré ningún turno próximo para cancelar 😊 ¿Hay algo más en que pueda ayudarte?"
+
+    if len(turnos) == 1:
+        return await _cancelar_y_confirmar(turnos[0], telefono)
+
+    # Más de un turno → mostrar lista
+    lineas = [f"{i+1}. {_formatear_turno(t)}" for i, t in enumerate(turnos)]
+    return (
+        "Tenés estos turnos próximos:\n"
+        + "\n".join(lineas)
+        + "\n¿Cuál querés cancelar? Respondé con el número."
+    )
+
+
+async def _manejar_seleccion_cancelo(telefono: str, num_str: str) -> str | None:
+    """
+    Si el último mensaje del asistente era una lista de CANCELO y el
+    paciente respondió con un número, cancela el turno elegido.
+    Retorna None si no estamos en ese contexto.
+    """
+    from agent.tools import obtener_proximos_turnos_por_telefono
+    historial = await obtener_historial(telefono)
+    ultimo_asistente = next(
+        (m["content"] for m in reversed(historial) if m["role"] == "assistant"), ""
+    )
+    if "¿Cuál querés cancelar?" not in ultimo_asistente:
+        return None
+    if not num_str.isdigit():
+        return None
+
+    idx = int(num_str) - 1
+    turnos = await obtener_proximos_turnos_por_telefono(telefono)
+    if idx < 0 or idx >= len(turnos):
+        return f"Ese número no corresponde a ningún turno. Respondé con un número del 1 al {len(turnos)}."
+
+    return await _cancelar_y_confirmar(turnos[idx], telefono)
 
 
 @app.post("/webhook")
@@ -131,6 +187,15 @@ async def webhook_handler(request: Request):
                 continue
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
+
+            # ── Selección de turno a cancelar (respuesta al listado de CANCELO) ──
+            respuesta_seleccion = await _manejar_seleccion_cancelo(msg.telefono, msg.texto.strip())
+            if respuesta_seleccion is not None:
+                await proveedor.enviar_mensaje(msg.telefono, respuesta_seleccion)
+                await guardar_mensaje(msg.telefono, "user", msg.texto)
+                await guardar_mensaje(msg.telefono, "assistant", respuesta_seleccion)
+                logger.info(f"Selección CANCELO procesada para {msg.telefono}")
+                continue
 
             # ── Detección de CANCELO (independiente del estado de la conversación) ──
             if msg.texto.strip().upper() == "CANCELO":
