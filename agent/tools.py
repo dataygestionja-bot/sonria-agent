@@ -500,28 +500,43 @@ async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
     telefono_limpio = telefono.replace("+", "").replace(" ", "")
     sufijo = telefono_limpio[-10:]
 
+    logger.info(f"[CANCELO-DIAG] Buscando turnos — tel_original={telefono!r} "
+                f"tel_limpio={telefono_limpio!r} sufijo={sufijo!r} hoy={hoy}")
+
     # Búsqueda 1: por telefono_solicitante
     por_telefono = await supabase_get("turnos", {
         "telefono_solicitante": f"ilike.*{sufijo}*",
         "fecha": f"gte.{hoy}",
         "estado": "eq.confirmado",
-        "select": "id,fecha,hora_inicio,profesional_id",
+        "select": "id,fecha,hora_inicio,profesional_id,telefono_solicitante",
         "order": "fecha.asc,hora_inicio.asc",
         "limit": "10",
     })
+    logger.info(f"[CANCELO-DIAG] Por telefono_solicitante (ilike *{sufijo}*): "
+                f"{len(por_telefono)} resultado(s) — "
+                + str([{"id": t.get("id"), "fecha": t.get("fecha"),
+                        "hora": t.get("hora_inicio"), "tel": t.get("telefono_solicitante")}
+                       for t in por_telefono]))
 
     # Búsqueda 2: por paciente_id — siempre, no solo como fallback
     por_paciente: list[dict] = []
     paciente = await buscar_paciente_por_telefono(telefono)
+    logger.info(f"[CANCELO-DIAG] buscar_paciente_por_telefono({telefono!r}): "
+                f"{'encontrado id=' + paciente['id'] if paciente else 'NO encontrado'}")
     if paciente:
         por_paciente = await supabase_get("turnos", {
             "paciente_id": f"eq.{paciente['id']}",
             "fecha": f"gte.{hoy}",
             "estado": "eq.confirmado",
-            "select": "id,fecha,hora_inicio,profesional_id",
+            "select": "id,fecha,hora_inicio,profesional_id,telefono_solicitante",
             "order": "fecha.asc,hora_inicio.asc",
             "limit": "10",
         })
+        logger.info(f"[CANCELO-DIAG] Por paciente_id={paciente['id']}: "
+                    f"{len(por_paciente)} resultado(s) — "
+                    + str([{"id": t.get("id"), "fecha": t.get("fecha"),
+                            "hora": t.get("hora_inicio"), "tel": t.get("telefono_solicitante")}
+                           for t in por_paciente]))
 
     # Combinar y deduplicar por id
     vistos: set[str] = set()
@@ -534,6 +549,10 @@ async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
 
     # Ordenar por fecha y hora (garantía tras deduplicación)
     todos.sort(key=lambda t: (t.get("fecha", ""), t.get("hora_inicio", "")))
+
+    logger.info(f"[CANCELO-DIAG] Tras deduplicar: {len(todos)} turno(s) — "
+                + str([{"id": t.get("id"), "fecha": t.get("fecha"),
+                        "hora": t.get("hora_inicio")} for t in todos]))
 
     for t in todos:
         prof_id = t.get("profesional_id")
