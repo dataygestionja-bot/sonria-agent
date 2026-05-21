@@ -487,14 +487,21 @@ async def obtener_proximo_turno_por_telefono(telefono: str) -> dict | None:
 
 async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
     """
-    Igual que obtener_proximo_turno_por_telefono pero retorna TODOS
-    los turnos confirmados futuros (hasta 10), ordenados por fecha/hora.
+    Retorna TODOS los turnos confirmados futuros del paciente (fecha >= hoy),
+    ordenados por fecha y hora ascendente.
+
+    Combina SIEMPRE dos búsquedas (sin fallback):
+      1. Por telefono_solicitante (ilike sobre últimos 10 dígitos)
+      2. Por paciente_id (lookup previo por teléfono)
+    Los resultados se deduplicán por id para cubrir cualquier variante de
+    formato de teléfono con la que se registró el turno.
     """
     hoy = date.today().strftime("%Y-%m-%d")
     telefono_limpio = telefono.replace("+", "").replace(" ", "")
     sufijo = telefono_limpio[-10:]
 
-    turnos = await supabase_get("turnos", {
+    # Búsqueda 1: por telefono_solicitante
+    por_telefono = await supabase_get("turnos", {
         "telefono_solicitante": f"ilike.*{sufijo}*",
         "fecha": f"gte.{hoy}",
         "estado": "eq.confirmado",
@@ -503,23 +510,36 @@ async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
         "limit": "10",
     })
 
-    if not turnos:
-        paciente = await buscar_paciente_por_telefono(telefono)
-        if paciente:
-            turnos = await supabase_get("turnos", {
-                "paciente_id": f"eq.{paciente['id']}",
-                "fecha": f"gte.{hoy}",
-                "estado": "eq.confirmado",
-                "select": "id,fecha,hora_inicio,profesional_id",
-                "order": "fecha.asc,hora_inicio.asc",
-                "limit": "10",
-            })
+    # Búsqueda 2: por paciente_id — siempre, no solo como fallback
+    por_paciente: list[dict] = []
+    paciente = await buscar_paciente_por_telefono(telefono)
+    if paciente:
+        por_paciente = await supabase_get("turnos", {
+            "paciente_id": f"eq.{paciente['id']}",
+            "fecha": f"gte.{hoy}",
+            "estado": "eq.confirmado",
+            "select": "id,fecha,hora_inicio,profesional_id",
+            "order": "fecha.asc,hora_inicio.asc",
+            "limit": "10",
+        })
 
-    for t in turnos:
+    # Combinar y deduplicar por id
+    vistos: set[str] = set()
+    todos: list[dict] = []
+    for t in por_telefono + por_paciente:
+        tid = t.get("id")
+        if tid and tid not in vistos:
+            vistos.add(tid)
+            todos.append(t)
+
+    # Ordenar por fecha y hora (garantía tras deduplicación)
+    todos.sort(key=lambda t: (t.get("fecha", ""), t.get("hora_inicio", "")))
+
+    for t in todos:
         prof_id = t.get("profesional_id")
         t["profesional"] = NOMBRES_CANONICOS.get(prof_id, "") if prof_id else ""
 
-    return turnos
+    return todos
 
 
 async def listar_obras_sociales() -> dict:

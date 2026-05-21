@@ -127,10 +127,12 @@ async def _cancelar_y_confirmar(turno: dict, telefono: str) -> str:
 async def _manejar_cancelo(telefono: str) -> str:
     """
     Si el paciente tiene 1 turno próximo → cancela directo.
-    Si tiene más de 1 → muestra lista y pide que elija.
+    Si tiene más de 1 → muestra lista numerada y espera elección.
     """
-    from agent.tools import obtener_proximos_turnos_por_telefono, cancelar_turno
+    from agent.tools import obtener_proximos_turnos_por_telefono
     turnos = await obtener_proximos_turnos_por_telefono(telefono)
+    logger.info(f"[CANCELO] {telefono} — {len(turnos)} turno(s) encontrado(s): "
+                f"{[t.get('id') for t in turnos]}")
 
     if not turnos:
         return "No encontré ningún turno próximo para cancelar 😊 ¿Hay algo más en que pueda ayudarte?"
@@ -138,7 +140,7 @@ async def _manejar_cancelo(telefono: str) -> str:
     if len(turnos) == 1:
         return await _cancelar_y_confirmar(turnos[0], telefono)
 
-    # Más de un turno → mostrar lista
+    # Más de un turno → mostrar lista numerada y guardar estado en historial
     lineas = [f"{i+1}. {_formatear_turno(t)}" for i, t in enumerate(turnos)]
     return (
         "Tenés estos turnos próximos:\n"
@@ -152,21 +154,36 @@ async def _manejar_seleccion_cancelo(telefono: str, num_str: str) -> str | None:
     Si el último mensaje del asistente era una lista de CANCELO y el
     paciente respondió con un número, cancela el turno elegido.
     Retorna None si no estamos en ese contexto.
+
+    El "estado" de espera está implícito en el historial: si el último
+    mensaje del asistente contiene "¿Cuál querés cancelar?", cualquier
+    número recibido se interpreta como selección de turno.
     """
     from agent.tools import obtener_proximos_turnos_por_telefono
+
+    # Solo actuar si el mensaje es un número
+    if not num_str.strip().isdigit():
+        return None
+
     historial = await obtener_historial(telefono)
     ultimo_asistente = next(
         (m["content"] for m in reversed(historial) if m["role"] == "assistant"), ""
     )
+
     if "¿Cuál querés cancelar?" not in ultimo_asistente:
         return None
-    if not num_str.isdigit():
-        return None
 
-    idx = int(num_str) - 1
+    idx = int(num_str.strip()) - 1
     turnos = await obtener_proximos_turnos_por_telefono(telefono)
+    logger.info(f"[CANCELO-SELECCION] {telefono} eligió opción {num_str} "
+                f"— {len(turnos)} turno(s) disponibles")
+
+    if not turnos:
+        return "No encontré turnos para cancelar. ¿Querés escribir CANCELO nuevamente?"
+
     if idx < 0 or idx >= len(turnos):
-        return f"Ese número no corresponde a ningún turno. Respondé con un número del 1 al {len(turnos)}."
+        return (f"Ese número no corresponde a ningún turno. "
+                f"Respondé con un número del 1 al {len(turnos)}.")
 
     return await _cancelar_y_confirmar(turnos[idx], telefono)
 
