@@ -187,6 +187,31 @@ async def _manejar_seleccion_cancelo(telefono: str, num_str: str) -> str | None:
     return await _cancelar_y_confirmar(turnos[idx], telefono)
 
 
+_DESPEDIDAS = {
+    "gracias", "chau", "chao", "bye", "hasta luego", "hasta pronto",
+    "nos vemos", "listo", "ok gracias", "dale gracias", "muchas gracias",
+    "nada más", "nada mas", "eso es todo", "todo bien", "estoy bien",
+    "no necesito nada más", "no necesito nada mas", "no necesito más",
+    "no necesito mas", "ya está", "ya esta", "perfecto gracias",
+    "buenas noches", "buenas tardes", "buen día", "buen dia",
+}
+
+
+def _es_despedida(texto: str) -> bool:
+    """Retorna True si el mensaje del paciente es una despedida."""
+    t = texto.strip().lower()
+    # Coincidencia exacta con el set
+    if t in _DESPEDIDAS:
+        return True
+    # Frases cortas (≤ 5 palabras) que empiezan o son completamente una despedida
+    palabras = t.split()
+    if len(palabras) <= 5:
+        for frase in _DESPEDIDAS:
+            if t == frase or t.startswith(frase) or t.endswith(frase):
+                return True
+    return False
+
+
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
@@ -253,6 +278,11 @@ async def webhook_handler(request: Request):
             await proveedor.enviar_mensaje(msg.telefono, respuesta)
 
             logger.info(f"Respuesta a {msg.telefono}: {respuesta}")
+
+            # ── Cierre automático de sesión al despedirse ──────────────────────
+            if _es_despedida(msg.texto):
+                await limpiar_historial(msg.telefono)
+                logger.info(f"[SESSION] Historial limpiado por despedida de {msg.telefono}")
 
         return {"status": "ok"}
 
