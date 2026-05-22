@@ -401,12 +401,30 @@ def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_
 def _es_solicitud_nombre(msg_asistente: str) -> bool:
     """Retorna True si el mensaje del asistente está pidiendo nombre y apellido."""
     lower = msg_asistente.lower()
-    return (
-        "nombre y apellido" in lower
-        or "me decís tu nombre" in lower
-        or "me decis tu nombre" in lower
-        or "decime tu nombre" in lower
-    )
+    return any(p in lower for p in [
+        "nombre y apellido",
+        "me decís tu nombre",
+        "me decis tu nombre",
+        "decime tu nombre",
+        "cómo se escribe tu nombre",
+        "como se escribe tu nombre",
+        "escribí tu nombre",
+        "escribe tu nombre",
+        "tu nombre completo",
+        "nombre completo",
+        "no parece ser un nombre válido",
+        "no parece ser un nombre valido",
+        "escribir tu nombre",
+    ])
+
+
+def _limpiar_nombre(texto: str) -> str:
+    """
+    Elimina caracteres que no corresponden a un nombre de persona.
+    Conserva: letras (con tildes/ñ), espacios, guiones, apóstrofes.
+    """
+    limpio = re.sub(r"[^a-záéíóúüñàèìòùâêîôûãõäëïöüÁÉÍÓÚÜÑ'\-\s]", "", texto, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", limpio).strip()
 
 
 # Palabras que el paciente puede escribir en lugar de su nombre
@@ -445,6 +463,11 @@ def _es_nombre_valido(texto: str) -> bool:
     if partes and all(p in _PALABRAS_INVALIDAS_NOMBRE for p in partes):
         return False
 
+    # Rechazar si contiene caracteres que no corresponden a un nombre
+    # (símbolos, números, &, #, @, etc.)
+    if re.search(r"[^a-zA-ZáéíóúüñÁÉÍÓÚÜÑàèìòùâêîôûãõäëïöü'\-\s]", strip):
+        return False
+
     # Debe tener al menos una vocal
     if not re.search(r'[aeiouáéíóúüàèìòù]', lower):
         return False
@@ -455,6 +478,8 @@ def _es_nombre_valido(texto: str) -> bool:
 def _extraer_nombre_apellido(texto: str) -> tuple[str, str] | None:
     """
     Intenta extraer nombre y apellido de un texto corto.
+    Aplica _limpiar_nombre() SIEMPRE antes de guardar para eliminar
+    caracteres especiales independientemente de si pasó la validación.
     Retorna (nombre, apellido) o None si no parece un nombre válido.
     """
     partes = texto.strip().split()
@@ -472,8 +497,13 @@ def _extraer_nombre_apellido(texto: str) -> tuple[str, str] | None:
     ]
     if any(p in texto_lower for p in palabras_contexto):
         return None
-    nombre = partes[0].capitalize()
-    apellido = " ".join(p.capitalize() for p in partes[1:]) if len(partes) > 1 else ""
+    # Limpiar caracteres especiales SIEMPRE antes de guardar
+    texto_limpio = _limpiar_nombre(texto)
+    partes_limpias = texto_limpio.split()
+    if not partes_limpias:
+        return None
+    nombre = partes_limpias[0].capitalize()
+    apellido = " ".join(p.capitalize() for p in partes_limpias[1:]) if len(partes_limpias) > 1 else ""
     return nombre, apellido
 
 
@@ -768,7 +798,15 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
 
         if telefono:
             try:
-                datos = extraer_datos_confirmacion(historial, respuesta, telefono, mensaje_actual=mensaje)
+                # Si el asistente estaba pidiendo corrección de nombre, no intentar
+                # registrar un turno — el mensaje del paciente es un nombre, no confirmación
+                _ultimo_asist_conf = next(
+                    (m.get("content", "") for m in reversed(historial) if m.get("role") == "assistant"), ""
+                )
+                _en_flujo_nombre = _es_solicitud_nombre(_ultimo_asist_conf)
+                datos = None if _en_flujo_nombre else extraer_datos_confirmacion(
+                    historial, respuesta, telefono, mensaje_actual=mensaje
+                )
                 if datos:
                     if not datos.get("dni"):
                         logger.warning("[DIAG] Confirmacion sin DNI — no se registra el turno")
