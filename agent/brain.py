@@ -150,21 +150,45 @@ def detectar_especialidad(texto: str) -> str | None:
     return None
 
 
+_SECUENCIAS_DNI_INVALIDAS = {"123456", "1234567", "12345678"}
+
+
+def _dni_valido(dni: str) -> bool:
+    """
+    Valida un DNI ya extraído (solo dígitos).
+    Rechaza:
+      - Primer dígito 0
+      - Todos los dígitos iguales (111111, 2222222, etc.)
+      - Secuencias obvias (123456, 1234567, 12345678)
+    """
+    if not dni:
+        return False
+    if dni[0] == "0":
+        return False
+    if len(set(dni)) == 1:
+        return False
+    if dni in _SECUENCIAS_DNI_INVALIDAS:
+        return False
+    return True
+
+
 def extraer_dni(texto: str) -> str | None:
     # Primero: formato con puntos estilo argentino — 1.234.567 o 12.345.678
-    # Cubre DNIs de 6 dígitos: X.XXX.XXX no aplica, pero sí XX.XXX (raro)
-    # Patrones: d{1,2}.d{3}.d{3} (7-8 dígitos) y d{1,3}.d{3} (4-6 dígitos)
     match_puntos = re.search(r'(?<!\d)(\d{1,2}\.\d{3}\.\d{3})(?!\d)', texto)
     if match_puntos:
-        return match_puntos.group(1).replace(".", "")
+        candidato = match_puntos.group(1).replace(".", "")
+        return candidato if _dni_valido(candidato) else None
     match_puntos6 = re.search(r'(?<!\d)(\d{1,3}\.\d{3})(?!\d)', texto)
     if match_puntos6:
         candidato = match_puntos6.group(1).replace(".", "")
         if 6 <= len(candidato) <= 8:
-            return candidato
+            return candidato if _dni_valido(candidato) else None
     # Segundo: 6-8 dígitos consecutivos (sin puntos)
     match = re.search(r'(?<!\d)(\d{6,8})(?!\d)', texto)
-    return match.group(1) if match else None
+    if match:
+        candidato = match.group(1)
+        return candidato if _dni_valido(candidato) else None
+    return None
 
 
 def extraer_datos_confirmacion(
