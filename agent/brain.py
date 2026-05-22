@@ -151,12 +151,19 @@ def detectar_especialidad(texto: str) -> str | None:
 
 
 def extraer_dni(texto: str) -> str | None:
-    # Primero: formato con puntos estilo argentino — 12.345.678 o 1.234.567
+    # Primero: formato con puntos estilo argentino — 1.234.567 o 12.345.678
+    # Cubre DNIs de 6 dígitos: X.XXX.XXX no aplica, pero sí XX.XXX (raro)
+    # Patrones: d{1,2}.d{3}.d{3} (7-8 dígitos) y d{1,3}.d{3} (4-6 dígitos)
     match_puntos = re.search(r'(?<!\d)(\d{1,2}\.\d{3}\.\d{3})(?!\d)', texto)
     if match_puntos:
         return match_puntos.group(1).replace(".", "")
-    # Segundo: 7-8 dígitos consecutivos (sin puntos)
-    match = re.search(r'(?<!\d)(\d{7,8})(?!\d)', texto)
+    match_puntos6 = re.search(r'(?<!\d)(\d{1,3}\.\d{3})(?!\d)', texto)
+    if match_puntos6:
+        candidato = match_puntos6.group(1).replace(".", "")
+        if 6 <= len(candidato) <= 8:
+            return candidato
+    # Segundo: 6-8 dígitos consecutivos (sin puntos)
+    match = re.search(r'(?<!\d)(\d{6,8})(?!\d)', texto)
     return match.group(1) if match else None
 
 
