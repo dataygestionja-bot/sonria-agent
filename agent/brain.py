@@ -151,6 +151,11 @@ def detectar_especialidad(texto: str) -> str | None:
 
 
 def extraer_dni(texto: str) -> str | None:
+    # Primero: formato con puntos estilo argentino — 12.345.678 o 1.234.567
+    match_puntos = re.search(r'(?<!\d)(\d{1,2}\.\d{3}\.\d{3})(?!\d)', texto)
+    if match_puntos:
+        return match_puntos.group(1).replace(".", "")
+    # Segundo: 7-8 dígitos consecutivos (sin puntos)
     match = re.search(r'(?<!\d)(\d{7,8})(?!\d)', texto)
     return match.group(1) if match else None
 
@@ -165,6 +170,21 @@ def extraer_datos_confirmacion(
 
     es_confirmacion = any(p in texto_respuesta for p in PALABRAS_CONFIRMACION)
     logger.warning("[DIAG] extraer_datos_confirmacion llamada. confirmacion=" + str(es_confirmacion) + ". resp=" + texto_respuesta[:80])
+
+    # Si la respuesta actual no es una confirmación (ej: "¡Genial! Nos vemos en el
+    # consultorio"), buscar en los últimos mensajes del asistente del historial.
+    # Cubre el caso en que Claude confirmó en el mensaje anterior y ahora despide.
+    if not es_confirmacion:
+        for msg in reversed(historial[-8:]):
+            if msg.get("role") != "assistant":
+                continue
+            contenido_hist = msg.get("content", "")
+            if any(p in contenido_hist.lower() for p in PALABRAS_CONFIRMACION):
+                logger.warning("[DIAG] Confirmacion encontrada en historial reciente — usando ese mensaje para extracción")
+                respuesta = contenido_hist
+                texto_respuesta = respuesta.lower()
+                es_confirmacion = True
+                break
 
     if not es_confirmacion:
         return None
