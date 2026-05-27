@@ -626,20 +626,6 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
                 f"\n\nPACIENTE NO ENCONTRADO EN BD (DNI: {dni}).\n"
                 f"Informá al paciente que no está registrado y pedí nombre y apellido para darlo de alta."
             )
-    elif telefono and len(historial) == 0:
-        paciente = await buscar_paciente_por_telefono(telefono)
-        if paciente:
-            paciente_id = paciente.get("id")
-            obra = paciente.get("obra_social_nombre") or "Particular"
-            contexto = (
-                f"\n\nPACIENTE RECONOCIDO POR TELEFONO:\n"
-                f"- Nombre: {paciente.get('nombre')} {paciente.get('apellido')}\n"
-                f"- DNI: {paciente.get('dni')}\n"
-                f"- Telefono: {paciente.get('telefono')}\n"
-                f"- Obra social: {obra}\n"
-                f"Saludá al paciente por su nombre. Igualmente pedí su DNI para confirmar identidad."
-            )
-
     return contexto, paciente_id
 
 
