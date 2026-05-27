@@ -479,7 +479,7 @@ async def obtener_proximo_turno_por_telefono(telefono: str) -> dict | None:
     turnos = await supabase_get("turnos", {
         "telefono_solicitante": f"ilike.*{sufijo}*",
         "fecha": f"gte.{hoy}",
-        "estado": "eq.confirmado",
+        "estado": "in.(confirmado,reservado)",
         "select": "id,fecha,hora_inicio,profesional_id",
         "order": "fecha.asc,hora_inicio.asc",
         "limit": "1",
@@ -492,7 +492,7 @@ async def obtener_proximo_turno_por_telefono(telefono: str) -> dict | None:
             turnos = await supabase_get("turnos", {
                 "paciente_id": f"eq.{paciente['id']}",
                 "fecha": f"gte.{hoy}",
-                "estado": "eq.confirmado",
+                "estado": "in.(confirmado,reservado)",
                 "select": "id,fecha,hora_inicio,profesional_id",
                 "order": "fecha.asc,hora_inicio.asc",
                 "limit": "1",
@@ -529,7 +529,7 @@ async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
     por_telefono = await supabase_get("turnos", {
         "telefono_solicitante": f"ilike.*{sufijo}*",
         "fecha": f"gte.{hoy}",
-        "estado": "eq.confirmado",
+        "estado": "in.(confirmado,reservado)",
         "select": "id,fecha,hora_inicio,profesional_id,telefono_solicitante",
         "order": "fecha.asc,hora_inicio.asc",
         "limit": "10",
@@ -549,7 +549,7 @@ async def obtener_proximos_turnos_por_telefono(telefono: str) -> list[dict]:
         por_paciente = await supabase_get("turnos", {
             "paciente_id": f"eq.{paciente['id']}",
             "fecha": f"gte.{hoy}",
-            "estado": "eq.confirmado",
+            "estado": "in.(confirmado,reservado)",
             "select": "id,fecha,hora_inicio,profesional_id,telefono_solicitante",
             "order": "fecha.asc,hora_inicio.asc",
             "limit": "10",
@@ -600,12 +600,12 @@ async def obtener_obras_sociales() -> list[str]:
 # ─── Turnos del paciente ──────────────────────────────────────────────────────
 
 async def obtener_turnos_paciente(paciente_id: str) -> list[dict]:
-    """Trae los turnos futuros confirmados del paciente."""
+    """Trae los turnos futuros reservados o confirmados del paciente."""
     hoy = date.today().strftime("%Y-%m-%d")
     turnos = await supabase_get("turnos", {
         "paciente_id": f"eq.{paciente_id}",
         "fecha": f"gte.{hoy}",
-        "estado": "eq.confirmado",
+        "estado": "in.(confirmado,reservado)",
         "select": "id,fecha,hora_inicio,motivo_consulta,profesional_id",
         "order": "fecha.asc"
     })
@@ -666,7 +666,7 @@ async def registrar_turno_supabase(
         "hora_inicio": hora_inicio_full,
         "hora_fin": hora_fin,
         "motivo_consulta": motivo,
-        "estado": "confirmado",
+        "estado": "reservado",
         "origen": "whatsapp",
         "nombre_solicitante": nombre,
         "apellido_solicitante": apellido,
