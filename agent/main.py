@@ -268,7 +268,7 @@ async def webhook_handler(request: Request):
             historial = await obtener_historial(msg.telefono)
 
             # Generar respuesta con Claude
-            respuesta = await generar_respuesta(msg.texto, historial, telefono=msg.telefono)
+            respuesta = await generar_respuesta(msg.texto, historial, telefono=msg.telefono, proveedor=proveedor)
 
             # Guardar mensaje del usuario Y respuesta del agente en memoria
             await guardar_mensaje(msg.telefono, "user", msg.texto)

@@ -1,6 +1,7 @@
 # agent/brain.py — Cerebro del agente: conexión con Claude API
 import os
 import re
+import asyncio
 import yaml
 import logging
 from anthropic import AsyncAnthropic
@@ -19,6 +20,8 @@ from agent.tools import (
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
+
+CONSULTORIO_TELEFONO = os.getenv("CONSULTORIO_TELEFONO", "el consultorio")
 
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -755,7 +758,51 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
     return ""
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str = "") -> str:
+async def _retry_turno_background(datos: dict, telefono: str, proveedor) -> None:
+    """
+    Reintenta registrar un turno en background con backoff exponencial.
+    Envía mensaje al paciente con el resultado final.
+    Delays: intento 1 → 10s, intento 2 → 30s, intento 3 → 2min.
+    """
+    delays = [10, 30, 120]
+    for i, delay in enumerate(delays):
+        await asyncio.sleep(delay)
+        try:
+            resultado = await asyncio.wait_for(
+                registrar_turno_supabase(**datos),
+                timeout=10.0,
+            )
+            if resultado.get("ok"):
+                logger.info(f"[TURNO-RETRY] Reintento {i + 1} exitoso para {telefono} — id={resultado.get('id')}")
+                await proveedor.enviar_mensaje(
+                    telefono,
+                    "✅ ¡Tu reserva quedó registrada! Te esperamos en el consultorio 😊"
+                )
+                return
+            else:
+                logger.error(f"[TURNO-RETRY] Reintento {i + 1} fallido (respuesta negativa): {resultado}")
+        except asyncio.TimeoutError:
+            logger.error(f"[TURNO-RETRY] Reintento {i + 1} — timeout (10s)")
+        except Exception as e:
+            logger.error(f"[TURNO-RETRY] Reintento {i + 1} — excepción: {e}")
+
+    # Todos los reintentos fallaron
+    paciente_id = datos.get("paciente_id", "desconocido")
+    fecha = datos.get("fecha", "?")
+    hora = datos.get("hora_inicio", "?")
+    prof_id = datos.get("profesional_id", "?")
+    logger.critical(
+        f"[ALERTA] Fallo al crear turno para paciente {paciente_id} — "
+        f"{fecha} {hora} con profesional {prof_id}. Requiere intervención manual."
+    )
+    await proveedor.enviar_mensaje(
+        telefono,
+        f"Tuvimos un problema al registrar tu turno 😔 "
+        f"Por favor contactá al consultorio directamente al {CONSULTORIO_TELEFONO}."
+    )
+
+
+async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str = "", proveedor=None) -> str:
     if not mensaje or len(mensaje.strip()) < 1:
         return obtener_mensaje_fallback()
 
@@ -828,11 +875,33 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                     if not datos.get("dni"):
                         logger.warning("[DIAG] Confirmacion sin DNI — no se registra el turno")
                     else:
-                        resultado = await registrar_turno_supabase(**datos)
-                        if resultado.get("ok"):
-                            logger.warning("[DIAG] Turno registrado OK: " + str(resultado.get("id")))
-                        else:
-                            logger.warning("[DIAG] Error registrando turno: " + str(resultado))
+                        # Primer intento con timeout de 10 segundos
+                        primer_intento_ok = False
+                        try:
+                            resultado = await asyncio.wait_for(
+                                registrar_turno_supabase(**datos),
+                                timeout=10.0,
+                            )
+                            if resultado.get("ok"):
+                                primer_intento_ok = True
+                                logger.warning("[DIAG] Turno registrado OK: " + str(resultado.get("id")))
+                            else:
+                                logger.warning("[DIAG] Error registrando turno: " + str(resultado))
+                        except asyncio.TimeoutError:
+                            logger.error("[TURNO] Primer intento — timeout (10s)")
+                        except Exception as e:
+                            logger.error(f"[TURNO] Primer intento — excepción: {e}")
+
+                        if not primer_intento_ok:
+                            # Informar al paciente y lanzar reintentos en background
+                            respuesta = (
+                                "Estamos validando tu reserva 😊 "
+                                "Te confirmaremos en unos instantes."
+                            )
+                            if proveedor:
+                                asyncio.create_task(
+                                    _retry_turno_background(datos, telefono, proveedor)
+                                )
             except Exception as e:
                 logger.error(f"Error en registro de turno: {e}")
 
