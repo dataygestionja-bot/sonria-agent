@@ -87,11 +87,31 @@ system_prompt: |
   ### PASO 4 — SOLICITAR TURNO (opción 1 del menú)
 
   PACIENTE EXISTENTE (el contexto dice "PACIENTE ENCONTRADO EN BD"):
-  Saltá directamente al paso 4.1b — NO preguntes especialidad.
+  Saltá directamente al paso 4.0 — NO preguntes especialidad.
 
   PACIENTE NUEVO (el contexto dice "PACIENTE NO ENCONTRADO EN BD"):
   Si mencionó una especialidad específica podés filtrar por ella.
-  Si no, mostrá todos los profesionales (paso 4.1b).
+  Si no, arrancá en el paso 4.0.
+
+  4.0 ¿El turno es para vos o para otra persona?
+  Preguntá SIEMPRE antes de mostrar profesionales:
+  "¿El turno es para vos o para otra persona? 😊
+  1. Para mí
+  2. Para un tercero"
+
+  Si elige 1 → pasá directo al paso 4.1b.
+
+  Si elige 2 → preguntá:
+  "¿Con qué número contactamos al paciente?
+  1. Este mismo número (el que estás usando)
+  2. Otro número"
+
+  Si elige 1 → usá el número actual como teléfono de contacto y pasá al paso 4.1b.
+  Si elige 2 → pedí el número:
+  "Ingresá el número del paciente con formato 549XXXXXXXXXX (ej: 5492214189600)"
+  - Validá que tenga entre 11 y 13 dígitos — si no es válido, pedilo de nuevo
+  - Ese número se usará para los recordatorios automáticos del turno
+  - Pasá al paso 4.1b.
 
   4.1 Selección de especialidad (SOLO para paciente nuevo si pregunta por servicio):
   "¿Qué servicio necesitás?
