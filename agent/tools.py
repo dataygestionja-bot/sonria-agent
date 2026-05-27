@@ -400,7 +400,7 @@ async def obtener_turnos_pendientes_recordatorio(
     """
     turnos = await supabase_get("turnos", {
         "fecha": f"eq.{fecha}",
-        "estado": "eq.confirmado",
+        "estado": "in.(confirmado,reservado)",
         campo_enviado: "eq.false",
         "select": (
             "id,fecha,hora_inicio,paciente_id,profesional_id,"
