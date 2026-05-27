@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from agent.tools import (
     obtener_profesionales_por_especialidad,
     obtener_proximas_fechas_disponibles,
-    obtener_obras_sociales,
     registrar_turno_supabase,
     buscar_paciente_por_dni,
     buscar_paciente_por_telefono,
@@ -327,37 +326,6 @@ def extraer_datos_confirmacion(
                         apellido = " ".join(partes[1:]) if len(partes) > 1 else ""
                     break
 
-    OBRAS_MAP = {
-        "osde": "OSDE",
-        "osecac": "OSECAC",
-        "ospe": "OSPE",
-        "swiss medical": "Swiss Medical",
-        "galeno": "Galeno",
-        "sancor salud": "Sancor Salud",
-    }
-    obra_social = None
-    OBRAS_NUM = {"1": "OSDE", "2": "OSECAC", "3": "OSPE", "4": "Swiss Medical", "5": "Galeno", "6": "Sancor Salud", "7": "Particular"}
-    # Buscar el mensaje de menú de obra social y la respuesta inmediata del paciente
-    for i, msg in enumerate(historial):
-        if msg.get("role") == "assistant":
-            contenido_menu = msg.get("content", "")
-            if "OSDE" in contenido_menu and "Particular" in contenido_menu and "Sancor" in contenido_menu:
-                # Es el menú de obra social — buscar la siguiente respuesta del usuario
-                for j in range(i + 1, len(historial)):
-                    if historial[j].get("role") == "user":
-                        num = historial[j].get("content", "").strip()
-                        if num in OBRAS_NUM:
-                            obra_social = OBRAS_NUM[num]
-                        break
-                if obra_social:
-                    break
-
-    if not obra_social:
-        for clave, nombre_normalizado in OBRAS_MAP.items():
-            if clave in texto_conv.lower():
-                obra_social = nombre_normalizado
-                break
-
     motivo = "Consulta odontologica"
     for msg in historial:
         if msg.get("role") == "user":
@@ -376,7 +344,6 @@ def extraer_datos_confirmacion(
         "telefono": telefono,
         "motivo": motivo,
         "dni": dni or "",
-        "obra_social": obra_social,
     }
 
     logger.warning("[DIAG] datos extraidos=" + str(datos))
@@ -401,23 +368,6 @@ def detectar_actualizacion_dato(historial: list[dict], respuesta: str, paciente_
         return None
 
     datos_actualizar = {}
-
-    OBRAS_MAP = {
-        "osde": "OSDE",
-        "osecac": "OSECAC",
-        "ospe": "OSPE",
-        "swiss medical": "Swiss Medical",
-        "galeno": "Galeno",
-        "sancor salud": "Sancor Salud",
-        "particular": None,
-    }
-    for clave, valor in OBRAS_MAP.items():
-        if clave in texto:
-            if valor:
-                datos_actualizar["obra_social_nombre"] = valor
-            else:
-                datos_actualizar["obra_social_id"] = None
-            break
 
     match_tel = re.search(r'\b(549\d{10}|\d{10,13})\b', texto)
     if match_tel:
@@ -615,14 +565,12 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
         paciente = await buscar_paciente_por_dni(dni)
         if paciente:
             paciente_id = paciente.get("id")
-            obra = paciente.get("obra_social_nombre") or "Particular"
             contexto = (
                 f"\n\nPACIENTE ENCONTRADO EN BD:\n"
                 f"- ID: {paciente.get('id')}\n"
                 f"- Nombre: {paciente.get('nombre')} {paciente.get('apellido')}\n"
                 f"- DNI: {paciente.get('dni')}\n"
                 f"- Telefono: {paciente.get('telefono')}\n"
-                f"- Obra social: {obra}\n"
                 f"Mostrá estos datos al paciente y pedí confirmación."
             )
         else:
@@ -699,11 +647,6 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
                 contexto_parts.append(
                     f"DISPONIBILIDAD REAL de {prof['nombre']} {prof['apellido']}:\n" + "\n".join(lineas)
                 )
-
-    if any(p in texto_completo for p in ["obra social", "osde", "swiss", "galeno", "sancor", "osecac", "ospe"]):
-        obras = await obtener_obras_sociales()
-        if obras:
-            contexto_parts.append("OBRAS SOCIALES ACEPTADAS: " + ", ".join(obras))
 
     # Inyectar turnos del paciente si pide cancelar, consultar o reprogramar
     paciente_id_ctx = None
@@ -944,13 +887,9 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                 logger.warning(f"[DIAG] detectar_actualizacion_dato — paciente_id={paciente_id_actual}, respuesta={respuesta[:60]}")
                 actualizacion = detectar_actualizacion_dato(historial, respuesta, paciente_id=paciente_id_actual)
                 if actualizacion:
-                    from agent.tools import actualizar_paciente, buscar_obra_social_id
+                    from agent.tools import actualizar_paciente
                     datos = actualizacion["datos"]
                     paciente_id = actualizacion["paciente_id"]
-                    if "obra_social_nombre" in datos:
-                        obra_id = await buscar_obra_social_id(datos.pop("obra_social_nombre"))
-                        if obra_id:
-                            datos["obra_social_id"] = obra_id
                     resultado = await actualizar_paciente(paciente_id, datos)
                     logger.warning("[DIAG] Paciente actualizado: " + str(resultado))
             except Exception as e:

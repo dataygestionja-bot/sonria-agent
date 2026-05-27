@@ -247,7 +247,6 @@ async def obtener_o_crear_paciente(
     apellido: str,
     dni: str,
     telefono: str,
-    obra_social: Optional[str] = None,
 ) -> dict | None:
     """
     Busca el paciente por DNI. Si no existe, lo crea.
@@ -258,11 +257,7 @@ async def obtener_o_crear_paciente(
         logger.info(f"Paciente encontrado: {paciente['id']}")
         return paciente
 
-    obra_social_id = None
-    if obra_social and obra_social.lower() != "particular":
-        obra_social_id = await buscar_obra_social_id(obra_social)
-
-    nuevo = await crear_paciente(nombre, apellido, dni, telefono, obra_social_id)
+    nuevo = await crear_paciente(nombre, apellido, dni, telefono)
     return nuevo if nuevo.get("id") else None
 
 
@@ -676,13 +671,12 @@ async def registrar_turno_supabase(
     telefono: str,
     motivo: str,
     dni: str = "",
-    obra_social: Optional[str] = None,
     email: Optional[str] = None,
 ) -> dict:
     """Busca o crea el paciente por DNI y registra el turno en Supabase."""
     paciente_id = None
     if dni:
-        paciente = await obtener_o_crear_paciente(nombre, apellido, dni, telefono, obra_social)
+        paciente = await obtener_o_crear_paciente(nombre, apellido, dni, telefono)
         if paciente:
             paciente_id = paciente.get("id")
 
