@@ -6,6 +6,7 @@ Envía recordatorios de turno por WhatsApp:
   - 2 horas antes   → columna recordatorio_2h_enviado
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -66,10 +67,18 @@ async def _enviar_recordatorio(proveedor, turno: dict, tipo: str) -> None:
         )
         campo = "recordatorio_2h_enviado"
 
+    from agent.tools import log_bot_event
     ok = await proveedor.enviar_mensaje(telefono, texto)
     if ok:
         await marcar_recordatorio_enviado(turno_id, campo)
         logger.info(f"[RECORDATORIO-{tipo}] ✓ {telefono} — turno {turno_id}")
+        asyncio.create_task(log_bot_event(
+            tipo="recordatorio_enviado",
+            nivel="info",
+            telefono=telefono,
+            turno_id=turno_id or "",
+            detalle=f"Recordatorio {tipo} enviado para turno del {fecha_str} a las {hora_fmt} con {profesional}",
+        ))
     else:
         logger.warning(f"[RECORDATORIO-{tipo}] ✗ fallo envío {telefono} — turno {turno_id}")
 

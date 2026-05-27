@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, obtener_ultimo_timestamp, limpiar_historial
 from agent.providers import obtener_proveedor
+from agent.tools import log_bot_event
 # from agent.notifications import scheduler, revisar_recordatorios  # DESACTIVADO TEMPORALMENTE
 
 SESSION_TIMEOUT_HORAS = 6
@@ -109,6 +110,7 @@ def _formatear_turno(turno: dict) -> str:
 
 async def _cancelar_y_confirmar(turno: dict, telefono: str) -> str:
     """Cancela el turno y retorna el mensaje de confirmación."""
+    import asyncio
     from agent.tools import cancelar_turno
     await cancelar_turno(turno["id"])
     try:
@@ -117,6 +119,13 @@ async def _cancelar_y_confirmar(turno: dict, telefono: str) -> str:
         fecha_fmt = turno.get("fecha", "")
     hora_fmt = turno.get("hora_inicio", "")[:5]
     logger.info(f"[CANCELO] Turno {turno['id']} cancelado para {telefono}")
+    asyncio.create_task(log_bot_event(
+        tipo="cancelacion",
+        nivel="info",
+        telefono=telefono,
+        turno_id=turno["id"],
+        detalle=f"Turno del {fecha_fmt} a las {hora_fmt} cancelado por el paciente vía WhatsApp",
+    ))
     return (
         f"Tu turno del {fecha_fmt} a las {hora_fmt} fue cancelado. "
         f"¡Esperamos verte pronto! 😊"

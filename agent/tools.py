@@ -2,6 +2,7 @@
 # Conectado a Supabase del consultorio Data y Gestión
 
 import os
+import asyncio
 import yaml
 import logging
 import httpx
@@ -42,6 +43,34 @@ def cargar_info_negocio() -> dict:
 
 
 # ─── Supabase helpers ─────────────────────────────────────────────────────────
+
+async def log_bot_event(
+    tipo: str,
+    nivel: str = "info",
+    telefono: str = "",
+    paciente_id: str = "",
+    turno_id: str = "",
+    detalle: str = "",
+) -> None:
+    """
+    Inserta un evento en la tabla bot_logs de Supabase.
+    Completamente no-bloqueante: si falla, solo loguea un warning.
+    Llamar siempre con asyncio.create_task() para no bloquear el flujo.
+    """
+    try:
+        data: dict = {"tipo": tipo, "nivel": nivel}
+        if telefono:
+            data["telefono"] = telefono
+        if paciente_id:
+            data["paciente_id"] = paciente_id
+        if turno_id:
+            data["turno_id"] = turno_id
+        if detalle:
+            data["detalle"] = detalle
+        await supabase_post("bot_logs", data)
+    except Exception as e:
+        logger.warning(f"[BOT-LOG] Error al insertar en bot_logs (tipo={tipo}): {e}")
+
 
 async def supabase_get(tabla: str, params: dict = None) -> list:
     url = f"{SUPABASE_URL}/rest/v1/{tabla}"
@@ -155,6 +184,13 @@ async def crear_paciente(
     resultado = await supabase_post("pacientes", paciente)
     if resultado.get("id"):
         logger.info(f"Paciente creado: {resultado['id']}")
+        asyncio.create_task(log_bot_event(
+            tipo="paciente_nuevo",
+            nivel="info",
+            telefono=telefono,
+            paciente_id=resultado["id"],
+            detalle=f"{nombre.strip().capitalize()} {apellido.strip().capitalize()} DNI {dni.strip()}",
+        ))
     return resultado
 
 
@@ -684,6 +720,14 @@ async def registrar_turno_supabase(
 
     if resultado.get("id"):
         logger.info(f"Turno registrado en Supabase: {resultado['id']}")
+        asyncio.create_task(log_bot_event(
+            tipo="turno_creado",
+            nivel="info",
+            telefono=telefono,
+            paciente_id=paciente_id or "",
+            turno_id=resultado["id"],
+            detalle=f"{fecha} {hora_inicio_full} — {motivo}",
+        ))
         return {"ok": True, "id": resultado["id"]}
     else:
         logger.error(f"Error registrando turno: {resultado}")

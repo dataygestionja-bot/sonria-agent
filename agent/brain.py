@@ -16,6 +16,7 @@ from agent.tools import (
     crear_paciente,
     obtener_turnos_paciente,
     cancelar_turno,
+    log_bot_event,
 )
 
 load_dotenv()
@@ -787,14 +788,29 @@ async def _retry_turno_background(datos: dict, telefono: str, proveedor) -> None
             logger.error(f"[TURNO-RETRY] Reintento {i + 1} — excepción: {e}")
 
     # Todos los reintentos fallaron
-    paciente_id = datos.get("paciente_id", "desconocido")
+    paciente_id = datos.get("paciente_id", "") or ""
     fecha = datos.get("fecha", "?")
     hora = datos.get("hora_inicio", "?")
     prof_id = datos.get("profesional_id", "?")
+    detalle_fallo = f"{fecha} {hora} con profesional {prof_id} — fallo tras 3 reintentos"
     logger.critical(
         f"[ALERTA] Fallo al crear turno para paciente {paciente_id} — "
-        f"{fecha} {hora} con profesional {prof_id}. Requiere intervención manual."
+        f"{detalle_fallo}. Requiere intervención manual."
     )
+    asyncio.create_task(log_bot_event(
+        tipo="turno_fallido",
+        nivel="critical",
+        telefono=telefono,
+        paciente_id=paciente_id,
+        detalle=detalle_fallo,
+    ))
+    asyncio.create_task(log_bot_event(
+        tipo="alerta",
+        nivel="critical",
+        telefono=telefono,
+        paciente_id=paciente_id,
+        detalle=f"Fallo definitivo al crear turno: {detalle_fallo}. Requiere intervención manual.",
+    ))
     await proveedor.enviar_mensaje(
         telefono,
         f"Tuvimos un problema al registrar tu turno 😔 "
