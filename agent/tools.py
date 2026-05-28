@@ -247,18 +247,22 @@ async def obtener_o_crear_paciente(
     apellido: str,
     dni: str,
     telefono: str,
+    telefono_es_del_paciente: bool = False,
 ) -> dict | None:
     """
     Busca el paciente por DNI. Si no existe, lo crea.
-    Si existe y el teléfono cambió (ej: flujo tercero), lo actualiza.
+    Solo actualiza el teléfono si:
+      - El paciente no tenía teléfono registrado, O
+      - telefono_es_del_paciente=True (viene explícitamente del flujo de tercero)
+    Nunca pisa un teléfono existente con el teléfono del remitente.
     Retorna el paciente con su ID.
     """
     paciente = await buscar_paciente_por_dni(dni)
     if paciente:
         logger.info(f"Paciente encontrado: {paciente['id']}")
-        # Actualizar teléfono si cambió (cubre flujo tercero donde el
-        # teléfono del paciente difiere del número de quien gestiona)
-        if telefono and paciente.get("telefono") != telefono:
+        telefono_actual = paciente.get("telefono")
+        # Solo actualizar si no tiene teléfono, o si el nuevo viene del paciente (no del remitente)
+        if telefono and (not telefono_actual or telefono_es_del_paciente) and telefono_actual != telefono:
             await actualizar_paciente(paciente["id"], {"telefono": telefono})
             paciente["telefono"] = telefono
             logger.info(
@@ -684,11 +688,18 @@ async def registrar_turno_supabase(
     motivo: str,
     dni: str = "",
     email: Optional[str] = None,
+    telefono_remitente: str = "",
 ) -> dict:
     """Busca o crea el paciente por DNI y registra el turno en Supabase."""
     paciente_id = None
     if dni:
-        paciente = await obtener_o_crear_paciente(nombre, apellido, dni, telefono)
+        # telefono_es_del_paciente=True solo cuando el teléfono del turno
+        # difiere del remitente (flujo de tercero con número explícito)
+        telefono_es_del_paciente = bool(telefono_remitente and telefono != telefono_remitente)
+        paciente = await obtener_o_crear_paciente(
+            nombre, apellido, dni, telefono,
+            telefono_es_del_paciente=telefono_es_del_paciente
+        )
         if paciente:
             paciente_id = paciente.get("id")
 

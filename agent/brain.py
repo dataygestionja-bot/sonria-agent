@@ -490,6 +490,7 @@ def extraer_datos_confirmacion(
         "telefono": telefono_turno,
         "motivo": motivo,
         "dni": dni or "",
+        "telefono_remitente": telefono,  # para distinguir flujo tercero en tools.py
     }
 
     logger.warning("[DIAG] datos extraidos=" + str(datos))
