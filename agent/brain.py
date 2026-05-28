@@ -1068,9 +1068,29 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                 datos = None if _en_flujo_nombre else extraer_datos_confirmacion(
                     historial, respuesta, telefono, mensaje_actual=mensaje
                 )
+
+                # Alerta crítica: Claude dijo "te agendé" pero el flujo estaba incompleto
+                # → el paciente cree que tiene turno pero no se registró nada
+                if datos is None and not _en_flujo_nombre:
+                    texto_resp = respuesta.lower()
+                    if any(p in texto_resp for p in PALABRAS_CONFIRMACION):
+                        logger.error("[ALERTA] Claude confirmó turno pero flujo incompleto — turno NO registrado")
+                        asyncio.create_task(log_bot_event(
+                            tipo="alerta",
+                            nivel="critical",
+                            telefono=telefono,
+                            detalle=f"Claude confirmó turno ('{respuesta[:80]}...') pero el flujo estaba incompleto — turno NO registrado en DB",
+                        ))
                 if datos:
                     if not datos.get("dni"):
                         logger.warning("[DIAG] Confirmacion sin DNI — no se registra el turno")
+                        # Alerta: Claude confirmó turno pero sin DNI para registrarlo
+                        asyncio.create_task(log_bot_event(
+                            tipo="alerta",
+                            nivel="error",
+                            telefono=telefono,
+                            detalle="Claude confirmó turno pero no se detectó DNI en la conversación — turno NO registrado",
+                        ))
                     else:
                         # Primer intento con timeout de 10 segundos
                         primer_intento_ok = False
@@ -1090,10 +1110,29 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                                     logger.error(f"[SESSION] Error limpiando historial tras turno: {e_limpiar}")
                             else:
                                 logger.warning("[DIAG] Error registrando turno: " + str(resultado))
+                                # Alerta: INSERT falló con respuesta negativa de Supabase
+                                asyncio.create_task(log_bot_event(
+                                    tipo="alerta",
+                                    nivel="error",
+                                    telefono=telefono,
+                                    detalle=f"Fallo INSERT turno en Supabase (respuesta negativa): {resultado}",
+                                ))
                         except asyncio.TimeoutError:
                             logger.error("[TURNO] Primer intento — timeout (10s)")
+                            asyncio.create_task(log_bot_event(
+                                tipo="alerta",
+                                nivel="error",
+                                telefono=telefono,
+                                detalle="Timeout al registrar turno (>10s) — se lanzaron reintentos en background",
+                            ))
                         except Exception as e:
                             logger.error(f"[TURNO] Primer intento — excepción: {e}")
+                            asyncio.create_task(log_bot_event(
+                                tipo="alerta",
+                                nivel="error",
+                                telefono=telefono,
+                                detalle=f"Excepción al registrar turno: {e}",
+                            ))
 
                         if not primer_intento_ok:
                             # Informar al paciente y lanzar reintentos en background
