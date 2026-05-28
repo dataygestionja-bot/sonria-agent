@@ -632,6 +632,31 @@ def _extraer_nombre_apellido(texto: str) -> tuple[str, str] | None:
     return nombre, apellido
 
 
+def _extraer_telefono_tercero(historial: list[dict]) -> str | None:
+    """
+    En el flujo de tercero, detecta si el usuario ya ingresó el número
+    de contacto del paciente y lo retorna.
+    Busca el patrón: asistente pidió "Ingresá el número del paciente"
+    → usuario respondió con un número de 11-13 dígitos.
+    """
+    _frases_tel_tercero = [
+        "ingresá el número del paciente",
+        "ingresa el número del paciente",
+        "número del paciente con formato",
+        "número de contacto del paciente",
+    ]
+    for i, msg in enumerate(historial):
+        if msg.get("role") == "assistant":
+            if any(f in msg.get("content", "").lower() for f in _frases_tel_tercero):
+                for j in range(i + 1, len(historial)):
+                    if historial[j].get("role") == "user":
+                        tel_candidato = re.sub(r'\D', '', historial[j].get("content", ""))
+                        if 11 <= len(tel_candidato) <= 13:
+                            return tel_candidato
+                        break
+    return None
+
+
 def _flujo_completo_para_turno(historial: list[dict], respuesta: str) -> bool:
     """
     Retorna True SOLO si el flujo de solicitud de turno está completo:
@@ -994,8 +1019,10 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                 )
 
             try:
+                # En flujo de tercero, usar el teléfono del paciente si ya fue ingresado
+                telefono_paciente = _extraer_telefono_tercero(historial) or telefono
                 nuevo_id = await registrar_paciente_si_es_nombre(
-                    mensaje, historial, telefono, paciente_id_actual
+                    mensaje, historial, telefono_paciente, paciente_id_actual
                 )
                 if nuevo_id:
                     paciente_id_actual = nuevo_id
