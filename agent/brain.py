@@ -306,6 +306,11 @@ def extraer_datos_confirmacion(
 ) -> dict | None:
     texto_respuesta = respuesta.lower()
 
+    # Guardia: verificar que el flujo de turno está completo antes de intentar registrar
+    if not _flujo_completo_para_turno(historial, respuesta):
+        logger.warning("[DIAG] extraer_datos_confirmacion abortada — flujo de turno incompleto")
+        return None
+
     es_confirmacion = any(p in texto_respuesta for p in PALABRAS_CONFIRMACION)
     logger.warning("[DIAG] extraer_datos_confirmacion llamada. confirmacion=" + str(es_confirmacion) + ". resp=" + texto_respuesta[:80])
 
@@ -627,6 +632,50 @@ def _extraer_nombre_apellido(texto: str) -> tuple[str, str] | None:
     return nombre, apellido
 
 
+def _flujo_completo_para_turno(historial: list[dict], respuesta: str) -> bool:
+    """
+    Retorna True SOLO si el flujo de solicitud de turno está completo:
+    - Se seleccionó un profesional
+    - Se seleccionó un horario (el asistente mostró slots y el usuario eligió uno)
+    - El asistente está confirmando el turno ahora
+
+    Evita registrar turnos cuando el bot apenas recibió el DNI y
+    saltó pasos del flujo (bug del flujo de tercero).
+    """
+    texto_respuesta = respuesta.lower()
+
+    # La respuesta actual debe ser una confirmación de turno
+    if not any(p in texto_respuesta for p in PALABRAS_CONFIRMACION):
+        return False
+
+    # Debe haber un mensaje previo del asistente con slots numerados (HH:MMhs)
+    _PATRON_SLOT = re.compile(r'\d\.\s+\S+\s+\d{1,2}/\d{1,2}\s*[—\-]+\s*\d{1,2}:\d{2}hs?', re.MULTILINE)
+    hubo_slots = any(
+        _PATRON_SLOT.search(m.get("content", ""))
+        for m in historial
+        if m.get("role") == "assistant"
+    )
+    if not hubo_slots:
+        logger.warning("[DIAG] flujo_completo_para_turno=False — no hubo listado de slots en historial")
+        return False
+
+    # El usuario debe haber elegido un slot (respondió con número después de ver los slots)
+    hubo_eleccion = False
+    for i, msg in enumerate(historial):
+        if msg.get("role") == "assistant" and _PATRON_SLOT.search(msg.get("content", "")):
+            # Buscar respuesta del usuario inmediatamente después
+            for j in range(i + 1, len(historial)):
+                if historial[j].get("role") == "user":
+                    if historial[j].get("content", "").strip().isdigit():
+                        hubo_eleccion = True
+                    break
+    if not hubo_eleccion:
+        logger.warning("[DIAG] flujo_completo_para_turno=False — usuario no eligió slot")
+        return False
+
+    return True
+
+
 async def registrar_paciente_si_es_nombre(
     mensaje: str,
     historial: list[dict],
@@ -645,12 +694,19 @@ async def registrar_paciente_si_es_nombre(
     if paciente_id_actual:
         return None  # Ya existe, nada que hacer
 
-    # Verificar que el asistente anterior pidió el nombre
+    # Verificar que el asistente anterior pidió el nombre (no el DNI)
     ultimo_asistente = ""
     for msg in reversed(historial):
         if msg.get("role") == "assistant":
             ultimo_asistente = msg.get("content", "")
             break
+
+    # Si el asistente estaba pidiendo el DNI, NO crear el paciente todavía
+    _frases_pedir_dni = ["me das el dni", "me contás tu dni", "dni del paciente", "ingresá tu dni"]
+    if any(f in ultimo_asistente.lower() for f in _frases_pedir_dni):
+        logger.info("[REGISTRO] Asistente pedía DNI, no nombre — abortando registro temprano")
+        return None
+
     if not _es_solicitud_nombre(ultimo_asistente):
         return None
 
