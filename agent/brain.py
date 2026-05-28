@@ -4,8 +4,8 @@ import re
 import asyncio
 import yaml
 import logging
+from datetime import datetime
 from anthropic import AsyncAnthropic
-from dotenv import load_dotenv
 from agent.tools import (
     obtener_profesionales_por_especialidad,
     obtener_proximas_fechas_disponibles,
@@ -38,6 +38,11 @@ DURACION_SLOTS = {
     "9cd6412e-e1e9-4b20-aa78-a9ba03ea240d": 30,
     "318bdbf8-04dc-4953-b284-d3c5f429cbbf": 30,
     "3b90bf47-16be-4116-b348-fd1bf2b9ef8c": 30,
+}
+
+_DIAS_ES = {
+    0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
+    4: "Viernes", 5: "Sábado", 6: "Domingo",
 }
 
 MESES = {
@@ -189,6 +194,53 @@ def detectar_fecha_hora_de_historial(historial: list[dict]) -> tuple[str, str] |
                     )
                     return fecha_iso, hora_fmt
             break  # solo mirar el asistente inmediatamente anterior
+
+    return None
+
+
+def detectar_seleccion_menu_profesionales(mensaje: str, historial: list[dict]) -> str | None:
+    """
+    Si el último mensaje del asistente era un menú numerado de profesionales
+    y el usuario respondió con un número, devuelve el profesional_id correcto.
+
+    Evita el bug donde detectar_profesional_de_historial devuelve el profesional
+    del historial reciente en lugar del que el usuario acaba de elegir del menú.
+    """
+    if not mensaje.strip().isdigit():
+        return None
+
+    # Buscar el último mensaje del asistente
+    ultimo_asistente = ""
+    for msg in reversed(historial):
+        if msg.get("role") == "assistant":
+            ultimo_asistente = msg.get("content", "")
+            break
+
+    if not ultimo_asistente:
+        return None
+
+    # Detectar qué profesionales aparecen en líneas numeradas del menú
+    profesionales_en_menu = []
+    for nombre, pid in PROFESIONALES.items():
+        apellido = nombre.split()[-1]
+        match = re.search(
+            rf'^(\d)\.\s+.*{re.escape(apellido)}',
+            ultimo_asistente,
+            re.MULTILINE | re.IGNORECASE
+        )
+        if match:
+            profesionales_en_menu.append((int(match.group(1)), pid))
+
+    # Solo actuar si el asistente mostró un menú con al menos 2 profesionales
+    if len(profesionales_en_menu) < 2:
+        return None
+
+    # Mapear el número elegido al profesional_id
+    num = int(mensaje.strip())
+    for posicion, pid in profesionales_en_menu:
+        if posicion == num:
+            logger.info(f"[PROF-MENU] Usuario eligió opción {num} → profesional_id={pid}")
+            return pid
 
     return None
 
@@ -681,7 +733,11 @@ async def construir_contexto_turnos(paciente_id: str) -> str:
         hora = t.get("hora_inicio", "")[:5]
         prof = t.get("profesional", "desconocido")
         turno_id = t.get("id", "")
-        lineas.append(f"  - ID: {turno_id} | {fecha} {hora}hs con {prof}")
+        try:
+            dia_nombre = _DIAS_ES[datetime.strptime(fecha, "%Y-%m-%d").weekday()]
+        except Exception:
+            dia_nombre = ""
+        lineas.append(f"  - ID: {turno_id} | {dia_nombre} {fecha} {hora}hs con {prof}")
     return "\n\nTURNOS DEL PACIENTE:\n" + "\n".join(lineas)
 
 
@@ -706,7 +762,9 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
     for msg in historial[-6:]:
         texto_completo += " " + msg.get("content", "").lower()
 
-    profesional_id = detectar_profesional_de_historial(mensaje, historial)
+    profesional_id = detectar_seleccion_menu_profesionales(mensaje, historial)
+    if not profesional_id:
+        profesional_id = detectar_profesional_de_historial(mensaje, historial)
     logger.warning(f"[DIAG] construir_contexto_supabase — profesional_id={profesional_id}")
     especialidad = detectar_especialidad(texto_completo)
     palabras_disponibilidad = [
@@ -769,7 +827,7 @@ async def construir_contexto_supabase(mensaje: str, historial: list[dict]) -> st
         turnos = await obtener_turnos_paciente(paciente_id_ctx)
         if turnos:
             lineas = [
-                f"  - ID: {t['id']} | {t['fecha']} {t['hora_inicio'][:5]}hs | "
+                f"  - ID: {t['id']} | {_DIAS_ES.get(datetime.strptime(t['fecha'], '%Y-%m-%d').weekday(), '')} {t['fecha']} {t['hora_inicio'][:5]}hs | "
                 f"Dr/a {t.get('profesional', '?')} | {t.get('motivo_consulta', '')}"
                 for t in turnos
             ]

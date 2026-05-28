@@ -362,8 +362,9 @@ async def obtener_slots_disponibles(profesional_id: str, fecha_str: str) -> list
         return []
 
     dia_iso = fecha.isoweekday()
+    dia_dow = dia_iso % 7  # convierte isoweekday (1=Lun…7=Dom) a DOW PostgreSQL (0=Dom…6=Sáb)
     horarios = await obtener_horarios_profesional(profesional_id)
-    horario_dia = next((h for h in horarios if h["dia_semana"] == dia_iso), None)
+    horario_dia = next((h for h in horarios if h["dia_semana"] == dia_dow), None)
 
     if not horario_dia:
         return []
@@ -406,13 +407,14 @@ async def obtener_proximas_fechas_disponibles(profesional_id: str, dias_a_buscar
     for i in range(0, dias_a_buscar + 1):
         fecha = hoy + timedelta(days=i)
         dia_iso = fecha.isoweekday()
+        dia_dow = dia_iso % 7  # convierte isoweekday (1=Lun…7=Dom) a DOW PostgreSQL (0=Dom…6=Sáb)
 
-        if dia_iso not in dias_con_horario:
+        if dia_dow not in dias_con_horario:
             continue
 
         fecha_str = fecha.strftime("%Y-%m-%d")
         slots = await obtener_slots_disponibles(profesional_id, fecha_str)
-        logger.warning(f"[DIAG] {fecha_str} dia_iso={dia_iso} slots={slots}")
+        logger.warning(f"[DIAG] {fecha_str} dia_dow={dia_dow} slots={slots}")
 
         if slots:
             resultados.append({
