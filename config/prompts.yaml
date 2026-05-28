@@ -106,7 +106,7 @@ system_prompt: |
   ### PASO 4 — SOLICITAR TURNO (opción 1 del menú)
 
   PACIENTE EXISTENTE (el contexto dice "PACIENTE ENCONTRADO EN BD"):
-  Saltá directamente al paso 4.1b — NO preguntes especialidad.
+  NUNCA preguntes especialidad. Saltá SIEMPRE directo al paso 4.1b y mostrá la lista completa de profesionales.
 
   PACIENTE NUEVO (el contexto dice "PACIENTE NO ENCONTRADO EN BD"):
   Si mencionó una especialidad específica podés filtrar por ella.

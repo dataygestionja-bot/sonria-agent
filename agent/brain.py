@@ -334,6 +334,30 @@ def extraer_datos_confirmacion(
                 motivo = msg["content"]
                 break
 
+    # Detectar si el turno es para un tercero y capturar su teléfono
+    # El bot pregunta "Ingresá el número del paciente" → usuario responde con el número
+    telefono_turno = telefono  # default: teléfono del remitente
+    _frases_tel_tercero = [
+        "ingresá el número del paciente",
+        "ingresa el número del paciente",
+        "número del paciente con formato",
+        "número de contacto del paciente",
+    ]
+    for i, msg in enumerate(historial):
+        if msg.get("role") == "assistant":
+            contenido_asist = msg.get("content", "").lower()
+            if any(f in contenido_asist for f in _frases_tel_tercero):
+                # La respuesta inmediata del usuario es el número del tercero
+                for j in range(i + 1, len(historial)):
+                    if historial[j].get("role") == "user":
+                        tel_candidato = re.sub(r'\D', '', historial[j].get("content", ""))
+                        if 11 <= len(tel_candidato) <= 13:
+                            telefono_turno = tel_candidato
+                            logger.info(f"[TERCERO] Teléfono del tercero detectado: {telefono_turno}")
+                        break
+                if telefono_turno != telefono:
+                    break
+
     datos = {
         "profesional_id": profesional_id,
         "fecha": fecha,
@@ -341,7 +365,7 @@ def extraer_datos_confirmacion(
         "duracion_min": DURACION_SLOTS.get(profesional_id, 30),
         "nombre": nombre or "",
         "apellido": apellido,
-        "telefono": telefono,
+        "telefono": telefono_turno,
         "motivo": motivo,
         "dni": dni or "",
     }
@@ -571,7 +595,14 @@ async def construir_contexto_paciente(mensaje: str, historial: list[dict], telef
                 f"- Nombre: {paciente.get('nombre')} {paciente.get('apellido')}\n"
                 f"- DNI: {paciente.get('dni')}\n"
                 f"- Telefono: {paciente.get('telefono')}\n"
-                f"Mostrá estos datos al paciente y pedí confirmación."
+                f"Mostrá estos datos al paciente y pedí confirmación.\n"
+                f"REGLA TURNO PARA PACIENTE EXISTENTE: Si el paciente solicita un turno, "
+                f"NUNCA preguntes por especialidad. "
+                f"Mostrá directamente la lista completa de profesionales (paso 4.1b):\n"
+                f"1. Bruno Ordoñez — Odontología General\n"
+                f"2. Fernando Rojas — Ortodoncia\n"
+                f"3. Florencia Celsi — Cirugía\n"
+                f"4. Federico Cabrera — Cirugía"
             )
         else:
             contexto = (
