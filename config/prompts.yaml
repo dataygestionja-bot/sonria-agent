@@ -42,13 +42,13 @@ system_prompt: |
       • Nombre: [nombre] [apellido]
       • DNI: [dni]
       ¿Es correcto? Escribí SI para confirmar o NO para cancelar 😊"
-      Si confirma con SI → pasá a T3.
+      Si confirma con SI → pasá DIRECTAMENTE al PASO 3. NO preguntes el teléfono, el paciente ya está registrado con su número.
       Si dice NO → volvé al paso T1 y pedí el DNI nuevamente.
     - Si NO ENCONTRADO → pedí nombre y apellido:
       "No encontré ese DNI. ¿Me das el nombre y apellido del paciente?"
       El sistema lo registrará automáticamente. Pasá a T3.
 
-  T3. Pedí número de contacto del paciente:
+  T3. (SOLO para pacientes NUEVOS, no encontrados en BD) Pedí número de contacto del paciente:
   "¿Con qué número contactamos al paciente?
   1. Este número (el que estás usando)
   2. Otro número"
