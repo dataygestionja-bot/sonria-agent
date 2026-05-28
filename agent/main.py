@@ -81,6 +81,42 @@ async def health_check():
     return {"status": "ok", "service": "agentkit"}
 
 
+@app.get("/debug/mensajes")
+async def debug_mensajes(telefono: str, limite: int = 30):
+    """Endpoint temporal de debug — consulta el historial de un número."""
+    from agent.memory import async_session, Mensaje
+    from sqlalchemy import select as sa_select
+    async with async_session() as session:
+        query = (
+            sa_select(Mensaje)
+            .where(Mensaje.telefono == telefono)
+            .order_by(Mensaje.timestamp.desc())
+            .limit(limite)
+        )
+        result = await session.execute(query)
+        mensajes = result.scalars().all()
+    return {
+        "telefono": telefono,
+        "total": len(mensajes),
+        "mensajes": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "timestamp": m.timestamp.isoformat() if m.timestamp else None,
+            }
+            for m in mensajes
+        ]
+    }
+
+
+@app.delete("/debug/mensajes")
+async def debug_limpiar_historial(telefono: str):
+    """Endpoint temporal de debug — limpia el historial de un número."""
+    await limpiar_historial(telefono)
+    return {"status": "ok", "telefono": telefono, "accion": "historial_limpiado"}
+
+
 @app.get("/webhook")
 async def webhook_verificacion(request: Request):
     """Verificación GET del webhook (requerido por Meta Cloud API, no-op para otros)."""
