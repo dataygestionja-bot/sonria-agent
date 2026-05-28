@@ -6,6 +6,7 @@ import yaml
 import logging
 from datetime import datetime
 from anthropic import AsyncAnthropic
+from dotenv import load_dotenv
 from agent.tools import (
     obtener_profesionales_por_especialidad,
     obtener_proximas_fechas_disponibles,
