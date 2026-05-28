@@ -193,7 +193,11 @@ def detectar_fecha_hora_de_historial(historial: list[dict], mensaje_actual: str 
                     mes = int(m.group(3))
                     hora_h = int(m.group(4))
                     hora_m = m.group(5)
-                    fecha_iso = f"2026-{mes:02d}-{dia:02d}"
+                    # Inferir año: si el mes del slot es anterior al mes actual,
+                    # el turno es para el año siguiente
+                    hoy = datetime.now()
+                    anio = hoy.year if mes >= hoy.month else hoy.year + 1
+                    fecha_iso = f"{anio}-{mes:02d}-{dia:02d}"
                     hora_fmt = f"{hora_h:02d}:{hora_m}"
                     logger.info(
                         f"[FECHA-HORA] Mapeado del historial: "
@@ -370,19 +374,23 @@ def extraer_datos_confirmacion(
         hora = f"{int(match_hora.group(1)):02d}:{match_hora.group(2)}"
 
         fecha = None
+        _hoy = datetime.now()
         match_fecha2 = re.search(r'\b(\d{1,2})\s+de\s+(\w+)\b', texto_respuesta)
         if match_fecha2:
             dia = int(match_fecha2.group(1))
             mes_num = MESES.get(match_fecha2.group(2).lower())
             if mes_num:
-                fecha = f"2026-{mes_num}-{dia:02d}"
+                mes_int = int(mes_num)
+                anio = _hoy.year if mes_int >= _hoy.month else _hoy.year + 1
+                fecha = f"{anio}-{mes_num}-{dia:02d}"
 
         if not fecha:
             for m in re.finditer(r'(\d{1,2})/(\d{1,2})', texto_respuesta):
                 dia_c = int(m.group(1))
                 mes_c = int(m.group(2))
                 if 1 <= dia_c <= 31 and 1 <= mes_c <= 12:
-                    fecha = f"2026-{mes_c:02d}-{dia_c:02d}"
+                    anio = _hoy.year if mes_c >= _hoy.month else _hoy.year + 1
+                    fecha = f"{anio}-{mes_c:02d}-{dia_c:02d}"
                     break
 
         if not fecha:
