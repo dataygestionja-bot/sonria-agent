@@ -684,16 +684,21 @@ def _flujo_completo_para_turno(historial: list[dict], respuesta: str) -> bool:
         logger.warning("[DIAG] flujo_completo_para_turno=False — no hubo listado de slots en historial")
         return False
 
-    # El usuario debe haber elegido un slot (respondió con número después de ver los slots)
+    # El usuario debe haber elegido un slot con un número
+    # Buscar en TODO el historial: cualquier número enviado por el usuario
+    # después de cualquier mensaje del asistente con slots
     hubo_eleccion = False
     for i, msg in enumerate(historial):
         if msg.get("role") == "assistant" and _PATRON_SLOT.search(msg.get("content", "")):
-            # Buscar respuesta del usuario inmediatamente después
+            # Buscar cualquier respuesta numérica del usuario después de este mensaje
             for j in range(i + 1, len(historial)):
                 if historial[j].get("role") == "user":
                     if historial[j].get("content", "").strip().isdigit():
                         hubo_eleccion = True
-                    break
+                        break
+            if hubo_eleccion:
+                break
+
     if not hubo_eleccion:
         logger.warning("[DIAG] flujo_completo_para_turno=False — usuario no eligió slot")
         return False
@@ -1131,6 +1136,22 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                     logger.warning("[DIAG] Paciente actualizado: " + str(resultado))
             except Exception as e:
                 logger.error(f"Error actualizando paciente: {e}")
+
+        # Actualizar teléfono del tercero en el paciente recién registrado
+        # Cuando el asistente confirma "Guardé el número XXXXXXXXX", hacer PATCH al paciente
+        if telefono and paciente_id_actual:
+            try:
+                _frases_guarde_numero = ["guardé el número", "guarde el numero"]
+                if any(f in respuesta.lower() for f in _frases_guarde_numero):
+                    tel_tercero = _extraer_telefono_tercero(historial + [
+                        {"role": "user", "content": mensaje}
+                    ])
+                    if tel_tercero and tel_tercero != telefono:
+                        from agent.tools import actualizar_paciente
+                        await actualizar_paciente(paciente_id_actual, {"telefono": tel_tercero})
+                        logger.warning(f"[TERCERO] Teléfono actualizado en paciente {paciente_id_actual}: {tel_tercero}")
+            except Exception as e:
+                logger.error(f"Error actualizando teléfono del tercero: {e}")
 
         return respuesta
     except Exception as e:
