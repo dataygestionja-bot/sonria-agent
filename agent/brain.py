@@ -143,6 +143,56 @@ def detectar_profesional_de_historial(mensaje_actual: str, historial: list[dict]
     return None
 
 
+def detectar_fecha_hora_de_historial(historial: list[dict]) -> tuple[str, str] | None:
+    """
+    Mapea la elección numérica del paciente (ej: "4") al slot correcto
+    del listado que mostró el asistente anteriormente.
+
+    Formato esperado en el mensaje del asistente (generado desde prompts.yaml 4.2):
+      "1. Jueves 28/05 — 09:00hs"
+      "4. Viernes 29/05 — 15:30hs"
+
+    Retorna (fecha_ISO "2026-MM-DD", hora "HH:MM") o None si no puede mapear.
+    """
+    _PATRON_SLOT = re.compile(
+        r'^(\d)\.\s+\S+\s+(\d{1,2})/(\d{1,2})\s*[—\-]+\s*(\d{1,2}):(\d{2})hs?',
+        re.MULTILINE,
+    )
+
+    for i in range(len(historial) - 1, -1, -1):
+        msg = historial[i]
+        if msg.get("role") != "user":
+            continue
+        user_text = msg.get("content", "").strip()
+        if not user_text.isdigit():
+            continue
+        num = int(user_text)
+
+        # Buscar el asistente inmediatamente anterior con un listado de slots
+        for j in range(i - 1, max(i - 5, -1), -1):
+            if historial[j].get("role") != "assistant":
+                continue
+            asist_content = historial[j].get("content", "")
+            if not _PATRON_SLOT.search(asist_content):
+                break  # el asistente inmediatamente anterior no tiene slots
+            for m in _PATRON_SLOT.finditer(asist_content):
+                if int(m.group(1)) == num:
+                    dia = int(m.group(2))
+                    mes = int(m.group(3))
+                    hora_h = int(m.group(4))
+                    hora_m = m.group(5)
+                    fecha_iso = f"2026-{mes:02d}-{dia:02d}"
+                    hora_fmt = f"{hora_h:02d}:{hora_m}"
+                    logger.info(
+                        f"[FECHA-HORA] Mapeado del historial: "
+                        f"usuario eligió {num} → {fecha_iso} {hora_fmt}"
+                    )
+                    return fecha_iso, hora_fmt
+            break  # solo mirar el asistente inmediatamente anterior
+
+    return None
+
+
 def detectar_especialidad(texto: str) -> str | None:
     texto_lower = texto.lower()
     if any(p in texto_lower for p in ["ortodoncia", "brackets", "aparatos"]):
@@ -240,33 +290,40 @@ def extraer_datos_confirmacion(
         logger.warning("[DIAG] No se detecto profesional")
         return None
 
-    match_hora = re.search(r'(\d{1,2}):(\d{2})\s*hs?', texto_respuesta)
-    if not match_hora:
-        match_hora = re.search(r'(\d{1,2}):(\d{2})', texto_respuesta)
-    if not match_hora:
-        logger.warning("[DIAG] No se detecto hora")
-        return None
-    hora = f"{int(match_hora.group(1)):02d}:{match_hora.group(2)}"
+    # 1. Mapear la elección numérica del paciente al slot correcto del historial
+    resultado_fh = detectar_fecha_hora_de_historial(historial)
+    if resultado_fh:
+        fecha, hora = resultado_fh
+        logger.info(f"[DIAG] Fecha/hora obtenida del historial: {fecha} {hora}")
+    else:
+        # 2. Fallback: extraer de la respuesta de confirmación de Claude
+        match_hora = re.search(r'(\d{1,2}):(\d{2})\s*hs?', texto_respuesta)
+        if not match_hora:
+            match_hora = re.search(r'(\d{1,2}):(\d{2})', texto_respuesta)
+        if not match_hora:
+            logger.warning("[DIAG] No se detecto hora")
+            return None
+        hora = f"{int(match_hora.group(1)):02d}:{match_hora.group(2)}"
 
-    fecha = None
-    match_fecha2 = re.search(r'\b(\d{1,2})\s+de\s+(\w+)\b', texto_respuesta)
-    if match_fecha2:
-        dia = int(match_fecha2.group(1))
-        mes_num = MESES.get(match_fecha2.group(2).lower())
-        if mes_num:
-            fecha = f"2026-{mes_num}-{dia:02d}"
+        fecha = None
+        match_fecha2 = re.search(r'\b(\d{1,2})\s+de\s+(\w+)\b', texto_respuesta)
+        if match_fecha2:
+            dia = int(match_fecha2.group(1))
+            mes_num = MESES.get(match_fecha2.group(2).lower())
+            if mes_num:
+                fecha = f"2026-{mes_num}-{dia:02d}"
 
-    if not fecha:
-        for m in re.finditer(r'(\d{1,2})/(\d{1,2})', texto_respuesta):
-            dia_c = int(m.group(1))
-            mes_c = int(m.group(2))
-            if 1 <= dia_c <= 31 and 1 <= mes_c <= 12:
-                fecha = f"2026-{mes_c:02d}-{dia_c:02d}"
-                break
+        if not fecha:
+            for m in re.finditer(r'(\d{1,2})/(\d{1,2})', texto_respuesta):
+                dia_c = int(m.group(1))
+                mes_c = int(m.group(2))
+                if 1 <= dia_c <= 31 and 1 <= mes_c <= 12:
+                    fecha = f"2026-{mes_c:02d}-{dia_c:02d}"
+                    break
 
-    if not fecha:
-        logger.warning("[DIAG] No se detecto fecha")
-        return None
+        if not fecha:
+            logger.warning("[DIAG] No se detecto fecha")
+            return None
 
     dni = None
     textos_dni = [mensaje_actual] + [m.get("content", "") for m in historial]

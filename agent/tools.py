@@ -250,11 +250,21 @@ async def obtener_o_crear_paciente(
 ) -> dict | None:
     """
     Busca el paciente por DNI. Si no existe, lo crea.
+    Si existe y el teléfono cambió (ej: flujo tercero), lo actualiza.
     Retorna el paciente con su ID.
     """
     paciente = await buscar_paciente_por_dni(dni)
     if paciente:
         logger.info(f"Paciente encontrado: {paciente['id']}")
+        # Actualizar teléfono si cambió (cubre flujo tercero donde el
+        # teléfono del paciente difiere del número de quien gestiona)
+        if telefono and paciente.get("telefono") != telefono:
+            await actualizar_paciente(paciente["id"], {"telefono": telefono})
+            paciente["telefono"] = telefono
+            logger.info(
+                f"[TERCERO] Teléfono del paciente {paciente['id']} "
+                f"actualizado a {telefono}"
+            )
         return paciente
 
     nuevo = await crear_paciente(nombre, apellido, dni, telefono)
