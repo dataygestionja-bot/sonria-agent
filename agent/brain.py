@@ -17,6 +17,7 @@ from agent.tools import (
     cancelar_turno,
     log_bot_event,
 )
+from agent.memory import limpiar_historial
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
@@ -875,6 +876,12 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
                             if resultado.get("ok"):
                                 primer_intento_ok = True
                                 logger.warning("[DIAG] Turno registrado OK: " + str(resultado.get("id")))
+                                # Limpiar historial solo cuando el INSERT fue exitoso
+                                try:
+                                    await limpiar_historial(telefono)
+                                    logger.info(f"[SESSION] Historial limpiado tras turno confirmado para {telefono}")
+                                except Exception as e_limpiar:
+                                    logger.error(f"[SESSION] Error limpiando historial tras turno: {e_limpiar}")
                             else:
                                 logger.warning("[DIAG] Error registrando turno: " + str(resultado))
                         except asyncio.TimeoutError:
