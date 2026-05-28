@@ -149,10 +149,13 @@ def detectar_profesional_de_historial(mensaje_actual: str, historial: list[dict]
     return None
 
 
-def detectar_fecha_hora_de_historial(historial: list[dict]) -> tuple[str, str] | None:
+def detectar_fecha_hora_de_historial(historial: list[dict], mensaje_actual: str = "") -> tuple[str, str] | None:
     """
     Mapea la elección numérica del paciente (ej: "4") al slot correcto
     del listado que mostró el asistente anteriormente.
+
+    mensaje_actual: el mensaje del usuario que disparó esta respuesta,
+    que todavía no está en historial porque se guarda después.
 
     Formato esperado en el mensaje del asistente (generado desde prompts.yaml 4.2):
       "1. Jueves 28/05 — 09:00hs"
@@ -165,8 +168,11 @@ def detectar_fecha_hora_de_historial(historial: list[dict]) -> tuple[str, str] |
         re.MULTILINE,
     )
 
-    for i in range(len(historial) - 1, -1, -1):
-        msg = historial[i]
+    # Incluir mensaje_actual al final del historial para detectar la elección actual
+    historial_completo = historial + ([{"role": "user", "content": mensaje_actual}] if mensaje_actual else [])
+
+    for i in range(len(historial_completo) - 1, -1, -1):
+        msg = historial_completo[i]
         if msg.get("role") != "user":
             continue
         user_text = msg.get("content", "").strip()
@@ -176,9 +182,9 @@ def detectar_fecha_hora_de_historial(historial: list[dict]) -> tuple[str, str] |
 
         # Buscar el asistente inmediatamente anterior con un listado de slots
         for j in range(i - 1, max(i - 5, -1), -1):
-            if historial[j].get("role") != "assistant":
+            if historial_completo[j].get("role") != "assistant":
                 continue
-            asist_content = historial[j].get("content", "")
+            asist_content = historial_completo[j].get("content", "")
             if not _PATRON_SLOT.search(asist_content):
                 break  # el asistente inmediatamente anterior no tiene slots
             for m in _PATRON_SLOT.finditer(asist_content):
@@ -349,7 +355,7 @@ def extraer_datos_confirmacion(
         return None
 
     # 1. Mapear la elección numérica del paciente al slot correcto del historial
-    resultado_fh = detectar_fecha_hora_de_historial(historial)
+    resultado_fh = detectar_fecha_hora_de_historial(historial, mensaje_actual)
     if resultado_fh:
         fecha, hora = resultado_fh
         logger.info(f"[DIAG] Fecha/hora obtenida del historial: {fecha} {hora}")
@@ -1138,9 +1144,9 @@ async def generar_respuesta(mensaje: str, historial: list[dict], telefono: str =
             try:
                 _frases_guarde_numero = ["guardé el número", "guarde el numero"]
                 if any(f in respuesta.lower() for f in _frases_guarde_numero):
-                    tel_tercero = _extraer_telefono_tercero(historial + [
-                        {"role": "user", "content": mensaje}
-                    ])
+                    # Incluir mensaje actual en la búsqueda (puede ser el número recién ingresado)
+                    historial_con_actual = historial + [{"role": "user", "content": mensaje}]
+                    tel_tercero = _extraer_telefono_tercero(historial_con_actual)
                     if tel_tercero and tel_tercero != telefono:
                         from agent.tools import actualizar_paciente
                         await actualizar_paciente(paciente_id_actual, {"telefono": tel_tercero})
